@@ -21,6 +21,23 @@ for project files. You never run commands that write to the working tree.
 ## State ID Verification
 
 Before reviewing, calculate the current STATE_ID for the approved change files.
+Do not use `git diff` for this fingerprint. `git diff HEAD` omits untracked
+files. Sort the approved paths with `LC_ALL=C`. Hash each existing worktree
+file with `git hash-object` and never pass `-w`. If a path does not exist,
+record `DELETED:<path>`.
+
+BASE=$(git rev-parse HEAD)
+DIFF_HASH=$(
+  printf '%s\n' <approved-files> | LC_ALL=C sort | while IFS= read -r file; do
+    if [ -e "$file" ]; then
+      printf 'FILE:%s\n' "$file"
+      git hash-object "$file"
+    else
+      printf 'DELETED:%s\n' "$file"
+    fi
+  done | git hash-object --stdin
+)
+STATE_ID="$BASE:$DIFF_HASH"
 
 Compare it with the expected STATE_ID supplied by the orchestrator.
 
