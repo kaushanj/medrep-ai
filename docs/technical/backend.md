@@ -82,7 +82,32 @@ The endpoint should remain focused on HTTP/API concerns such as:
 
 The route handler should not contain the entire retrieval and answer-generation process as the project becomes larger.
 
-The final request and response schemas are **TBD**.
+### Current temporary stub contract
+
+Until RAG is wired, `POST /chat` uses this temporary stub contract:
+
+Request:
+
+```json
+{
+  "question": "What is Panadol used for?"
+}
+```
+
+Response:
+
+```json
+{
+  "answer": "You asked: What is Panadol used for?",
+  "source": "test.pdf"
+}
+```
+
+- Request body field: `question` (string).
+- Response fields: `answer` (string echo of the question as `You asked: <question>`), `source` (fixed stub value `test.pdf`).
+- RAG, Amazon Bedrock, and OpenSearch remain planned and are not implemented by this stub.
+
+The final production request and response schemas remain **TBD**.
 
 No additional API endpoints are defined at this stage.
 
@@ -232,9 +257,8 @@ The full TDD workflow is defined separately and should not be duplicated in this
 
 - Python is the selected backend language.
 - FastAPI is the selected backend framework.
-- `POST /chat` is the defined current API endpoint.
-
-The exact amount of completed implementation behind `POST /chat` is **TBD** from the current project documentation.
+- `POST /chat` is implemented as a temporary stub endpoint.
+- The stub accepts `{ "question": "..." }` and returns `{ "answer": "You asked: ...", "source": "test.pdf" }`.
 
 ### Planned
 
@@ -242,13 +266,13 @@ The exact amount of completed implementation behind `POST /chat` is **TBD** from
 - Retrieval from real product PDF content.
 - Amazon OpenSearch for retrieval.
 - Amazon Bedrock for answer generation.
-- Answers that include source information.
+- Answers that include source information from real documents.
 - Authentication and authorization.
 
 ### TBD
 
-- Final `POST /chat` request schema.
-- Final `POST /chat` response schema.
+- Final `POST /chat` request schema (beyond the temporary stub).
+- Final `POST /chat` response schema (beyond the temporary stub).
 - Service-layer structure.
 - Bedrock model.
 - Embedding model.
