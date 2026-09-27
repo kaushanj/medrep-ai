@@ -1,5 +1,5 @@
 ---
-name: quality-loop-orchestrator
+name: orchestrator
 description: >
   Coordinates a requirement through planning, implementation, independent
   review and testing, quality-gate evaluation, and one controlled fix loop.

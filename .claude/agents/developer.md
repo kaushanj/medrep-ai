@@ -65,10 +65,21 @@ implement the plan. Do not commit. Do not use git write operations.
 After completing the implementation, calculate a state fingerprint for the
 files changed for the current task.
 
-Use:
+Use this content fingerprint. Do not use `git diff`. Sort paths with
+`LC_ALL=C`. Hash worktree bytes with `git hash-object` and never pass `-w`.
+This includes new untracked files, and staging must not change the result.
 
 BASE=$(git rev-parse HEAD)
-DIFF_HASH=$(git diff HEAD -- <approved-files> | git hash-object --stdin)
+DIFF_HASH=$(
+  printf '%s\n' <approved-files> | LC_ALL=C sort | while IFS= read -r file; do
+    if [ -e "$file" ]; then
+      printf 'FILE:%s\n' "$file"
+      git hash-object "$file"
+    else
+      printf 'DELETED:%s\n' "$file"
+    fi
+  done | git hash-object --stdin
+)
 
 Report:
 

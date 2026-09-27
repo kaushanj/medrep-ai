@@ -59,17 +59,33 @@ Edit. Do not use GitHub MCP or `gh`. Do not spawn other agents.
 
 Use Bash only for read-only git inspection and State ID calculation,
 including `git status`, `git diff`, `git log`, `git show`,
-`git rev-parse HEAD`, and `git hash-object --stdin`.
+`git rev-parse HEAD`, `git hash-object` on a worktree path, and
+`git hash-object --stdin`.
 
 Never use `git hash-object -w`. Do not commit, checkout, stash, rebase, apply
 patches, or otherwise mutate the repository.
 
 ## State ID verification
 
-Use the exact same State ID calculation used by Developer, Reviewer, and Tester:
+Use the exact same content fingerprint as Developer, Reviewer, Tester, and
+Commit. Do not use `git diff` for the fingerprint. `git diff HEAD` omits
+untracked files, so it cannot identify new approved files.
+
+Sort the approved paths with `LC_ALL=C`. Hash each existing worktree file
+with `git hash-object` and never pass `-w`. If a path does not exist, record
+`DELETED:<path>`.
 
 BASE=$(git rev-parse HEAD)
-DIFF_HASH=$(git diff HEAD -- <approved-files> | git hash-object --stdin)
+DIFF_HASH=$(
+  printf '%s\n' <approved-files> | LC_ALL=C sort | while IFS= read -r file; do
+    if [ -e "$file" ]; then
+      printf 'FILE:%s\n' "$file"
+      git hash-object "$file"
+    else
+      printf 'DELETED:%s\n' "$file"
+    fi
+  done | git hash-object --stdin
+)
 STATE_ID="$BASE:$DIFF_HASH"
 
 Use only the approved files for the current task.

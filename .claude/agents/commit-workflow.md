@@ -30,14 +30,28 @@ Calculate it using the approved file list:
 
 ```bash
 BASE=$(git rev-parse HEAD)
-DIFF_HASH=$(git diff HEAD -- <approved-files> | git hash-object --stdin)
+DIFF_HASH=$(
+  printf '%s\n' <approved-files> | LC_ALL=C sort | while IFS= read -r file; do
+    if [ -e "$file" ]; then
+      printf 'FILE:%s\n' "$file"
+      git hash-object "$file"
+    else
+      printf 'DELETED:%s\n' "$file"
+    fi
+  done | git hash-object --stdin
+)
 CURRENT_STATE_ID="$BASE:$DIFF_HASH"
 ```
+
+Sort the approved paths in byte order (`LC_ALL=C sort`). Hash each existing
+path from the worktree with `git hash-object` and never pass `-w`. If a path
+does not exist, record `DELETED:<path>` and no blob hash.
 
 Use exactly the same approved files that were used by the Developer,
 Reviewer, Tester, and Quality Gate.
 
-For this workflow, STATE_ID applies to tracked approved files only.
+STATE_ID applies to all approved files, including new untracked files.
+It hashes worktree contents, so staging an approved file must not change it.
 
 ## Workflow
 
@@ -62,7 +76,16 @@ If any required information is missing, stop.
 
 ```bash
 BASE=$(git rev-parse HEAD)
-DIFF_HASH=$(git diff HEAD -- <approved-files> | git hash-object --stdin)
+DIFF_HASH=$(
+  printf '%s\n' <approved-files> | LC_ALL=C sort | while IFS= read -r file; do
+    if [ -e "$file" ]; then
+      printf 'FILE:%s\n' "$file"
+      git hash-object "$file"
+    else
+      printf 'DELETED:%s\n' "$file"
+    fi
+  done | git hash-object --stdin
+)
 CURRENT_STATE_ID="$BASE:$DIFF_HASH"
 ```
 
@@ -93,11 +116,16 @@ Do not include unrelated files.
 Do not include untracked workflow, agent, configuration, generated, or other
 files unless the Quality Gate explicitly approved them.
 
-6. Inspect the diff for the approved files:
+6. Inspect the approved files:
 
 ```bash
+git status --short -- <approved-files>
 git diff HEAD -- <approved-files>
 ```
+
+`git diff HEAD` does not show untracked files. A new approved file that is
+absent from that diff is expected. Do not treat that as a mismatch. The
+content STATE_ID is the identity check.
 
 7. Stage ONLY the approved files using explicit paths.
 
@@ -138,7 +166,16 @@ If the staged state does not match the approved state, stop.
 
 ```bash
 BASE=$(git rev-parse HEAD)
-DIFF_HASH=$(git diff HEAD -- <approved-files> | git hash-object --stdin)
+DIFF_HASH=$(
+  printf '%s\n' <approved-files> | LC_ALL=C sort | while IFS= read -r file; do
+    if [ -e "$file" ]; then
+      printf 'FILE:%s\n' "$file"
+      git hash-object "$file"
+    else
+      printf 'DELETED:%s\n' "$file"
+    fi
+  done | git hash-object --stdin
+)
 CURRENT_STATE_ID="$BASE:$DIFF_HASH"
 ```
 
