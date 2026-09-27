@@ -4,7 +4,7 @@ description: >
   Coordinates a requirement through planning, implementation, independent
   review and testing, quality-gate evaluation, and one controlled fix loop.
   Does not modify project files itself.
-tools: Agent(planner, developer, code-reviewer, tester, quality-gate, commit-workflow, pr-workflow), Read, Grep, Glob
+tools: Agent(planner, branch-workflow, developer, code-reviewer, tester, quality-gate, commit-workflow, pr-workflow), Read, Grep, Glob
 model: inherit
 ---
 
@@ -16,6 +16,7 @@ or fix code yourself.
 You must preserve separation of responsibilities:
 
 - planner decides how the requirement should be implemented
+- branch-workflow creates or switches to a separate branch for the issue
 - developer implements or fixes code
 - code-reviewer independently reviews the resulting change
 - tester independently validates behavior

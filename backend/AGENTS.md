@@ -21,7 +21,7 @@ The backend uses Python and FastAPI.
 ## Testing
 
 - Follow the project's testing conventions.
-- Use the `tdd` skill for feature and bug-fix work.
+
 - Prefer pytest for backend tests.
 - Test API behavior, validation, status codes, and responses.
 - Do not weaken tests just to make them pass.
