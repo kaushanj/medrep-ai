@@ -2,3 +2,5 @@ fastapi
 uvicorn
 pytest
 httpx
+boto3
+opensearch-py
