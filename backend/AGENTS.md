@@ -43,6 +43,23 @@ backend/
 
 Do not create these folders unless the current issue needs them.
 
+## Docker
+
+The backend should be containerized with Docker.
+
+When Docker setup does not exist yet:
+
+- Create a `Dockerfile` for the FastAPI backend.
+- Add a `.dockerignore` file.
+- Run the FastAPI application inside the Docker container.
+- Expose the application port from the container.
+- Use environment variables for configuration.
+- Do not copy secrets, `.env` files, AWS credentials, or unnecessary files into the image.
+- Use the existing Python dependency file such as `requirements.txt` or `pyproject.toml`.
+- Keep the Docker setup simple.
+- Do not introduce Docker Compose unless multiple services require it.
+- FastAPI must listen on `0.0.0.0` inside the container.
+
 ## AWS
 
 When working with AWS:
