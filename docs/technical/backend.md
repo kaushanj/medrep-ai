@@ -117,7 +117,34 @@ Response:
 - Request body field: `question` (string).
 - Response fields: `answer` and `source` from `ask_rag` (singular `source` string; may be empty when no documents are found).
 
-No additional API endpoints are defined at this stage.
+No additional API endpoints are defined at this stage. PDF ingestion is a script/CLI module (`backend/ingest.py`), not an HTTP route.
+
+### Document ingestion (`ingest.py`)
+
+`backend/ingest.py` indexes product PDFs from S3 into OpenSearch for RAG:
+
+1. Download PDF bytes from S3.
+2. Extract text with PyPDF.
+3. Split text into overlapping character chunks.
+4. Embed each chunk with Amazon Titan Embeddings (`amazon.titan-embed-text-v2:0` by default, same as `rag.embed_question`).
+5. Index documents into OpenSearch with body `{ "text", "source", "embedding" }`.
+
+| Setting | Provisional default | Notes |
+| --- | --- | --- |
+| OpenSearch index | `medrep-index` | Override with `OPENSEARCH_INDEX` |
+| Chunk size | 500 characters | `DEFAULT_CHUNK_SIZE` |
+| Chunk overlap | 50 characters | `DEFAULT_CHUNK_OVERLAP`; must be `< chunk_size` |
+| Embedding model | `amazon.titan-embed-text-v2:0` | Override with `BEDROCK_EMBEDDING_MODEL_ID` |
+| Document fields | `text`, `source`, `embedding` | `source` is the PDF filename |
+
+CLI (demo PDF):
+
+```bash
+cd backend
+python ingest.py --bucket <bucket> --key Demo-pain-relief.pdf
+```
+
+Environment: `S3_BUCKET`, `S3_PDF_KEY`, `OPENSEARCH_HOST`, `OPENSEARCH_INDEX`, `AWS_REGION`, plus standard AWS credentials. AOSS signing uses the same `AWSV4SignerAuth` path as `rag.py`.
 
 ## Service Layer
 
@@ -151,37 +178,32 @@ Its responsibility is to:
 4. Generate an answer using the question and retrieved context.
 5. Return the answer with source information.
 
-The following RAG decisions are not final:
+Provisional RAG ingestion settings (issue #8; may be tuned later):
 
-- Document chunking strategy: **TBD**
-- Chunk size: **TBD**
-- Chunk overlap: **TBD**
-- Embedding model: **TBD**
-- Retrieval top-k value: **TBD**
+- Document chunking strategy: fixed-size overlapping character chunks
+- Chunk size: 500 characters
+- Chunk overlap: 50 characters
+- Embedding model: `amazon.titan-embed-text-v2:0` (override with `BEDROCK_EMBEDDING_MODEL_ID`)
+- Retrieval top-k value: **TBD** (runtime default via `RAG_TOP_K`, currently 3)
 - Relevance threshold: **TBD**
-- Behavior when retrieval quality is too low: **TBD**
+- Behavior when retrieval quality is too low: controlled empty-source response from `ask_rag`
 
 The RAG layer should avoid making these settings part of unrelated API logic.
 
 ## Retrieval
 
-Amazon OpenSearch is planned for retrieving relevant product document content.
+Amazon OpenSearch stores ingested product document chunks for retrieval.
 
-The retrieval step will receive information derived from the user's question and find relevant content from the indexed product documents.
+The retrieval step receives an embedding of the user's question and finds relevant content from the indexed product documents (k-NN on the `embedding` field).
 
 The retrieved content will then be provided to the answer-generation step.
 
-The final OpenSearch configuration is **TBD**.
+Current OpenSearch document shape for ingestion/retrieval:
 
-This includes:
-
-- Index structure: **TBD**
-- Vector configuration: **TBD**
-- Metadata fields: **TBD**
-- Retrieval top-k: **TBD**
-- Relevance threshold: **TBD**
-
-No final index design should be assumed until these decisions are tested.
+- Index name: `medrep-index` (default; override with `OPENSEARCH_INDEX`)
+- Fields: `text` (chunk text), `source` (PDF filename), `embedding` (vector)
+- Vector / k-NN index mapping details beyond this field set: **TBD**
+- Retrieval top-k: env `RAG_TOP_K` (default 3); relevance threshold: **TBD**
 
 ## LLM Generation
 
@@ -194,7 +216,7 @@ The generation step will receive:
 
 It will use this information to produce the answer returned by MedRep AI.
 
-The exact Bedrock model is **TBD**.
+The generation model default in code is `amazon.nova-lite-v1:0` (`BEDROCK_GENERATION_MODEL_ID`); further prompt/tuning choices remain open.
 
 Other generation settings are also **TBD**, including:
 
@@ -267,44 +289,34 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - FastAPI is the selected backend framework.
 - `POST /chat` accepts `{ "question": "..." }`, calls `ask_rag(question)`, and returns `{ "answer", "source" }`.
 - `ask_rag(question)` in `backend/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source}`.
+- `backend/ingest.py` ingests S3 PDFs into OpenSearch `medrep-index` (PyPDF extract → chunk → Titan embed → index `{text, source, embedding}`).
 
 ### Planned
 
-- Retrieval from real product PDF content.
-- Answers that include source information from real documents.
+- Answers that include source information from real documents end-to-end in production.
 - Authentication and authorization.
 
 ### TBD
 
 - Service-layer structure.
-- Bedrock model.
-- Embedding model.
-- Chunking strategy.
-- Chunk size.
-- Chunk overlap.
-- Retrieval top-k.
-- Relevance threshold.
-- Prompt design.
-- Generation settings.
+- Final Bedrock generation model and prompt design (code default exists).
+- Whether provisional chunk size/overlap should change after evaluation.
+- Retrieval top-k tuning and relevance threshold.
+- Generation settings (temperature, max tokens).
 - Authentication implementation.
 - Error response format.
 - Retry behavior.
 - Final configuration approach.
 - Final deployment architecture.
+- OpenSearch k-NN mapping / vector dimension configuration details.
 
 ## Open Technical Questions
 
-- Which Amazon Bedrock model should be used for answer generation?
-- Which embedding model should be used?
-- How should PDF content be divided into chunks?
-- What chunk size should be used?
-- Should chunks overlap, and if so, by how much?
-- What retrieval top-k value should be used?
+- Should the provisional chunk size (500) / overlap (50) be changed after evaluating `Demo-pain-relief.pdf` retrieval quality?
+- What retrieval top-k value should be used in production?
 - What relevance threshold should be used?
-- How should the system behave when retrieval finds no sufficiently relevant content?
-- What metadata should be associated with retrieved document content?
-- What exact source information should `POST /chat` return?
-- What should the final request and response schemas look like?
+- How should the system behave when retrieval finds no sufficiently relevant content beyond the current empty-source response?
+- What exact source information should `POST /chat` return if multiple chunks match?
 - How should authentication be implemented?
 - How should authorization be handled if different user roles are introduced?
 - What retry behavior is appropriate for external service failures?

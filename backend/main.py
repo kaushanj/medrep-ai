@@ -1,6 +1,8 @@
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+load_dotenv()
 from rag import ask_rag
 
 app = FastAPI()
