@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from rag import ask_rag
+
 app = FastAPI()
 
 
@@ -15,7 +17,5 @@ class ChatResponse(BaseModel):
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
-    return ChatResponse(
-        answer=f"You asked: {request.question}",
-        source="test.pdf",
-    )
+    result = ask_rag(request.question)
+    return ChatResponse(answer=result["answer"], source=result["source"])

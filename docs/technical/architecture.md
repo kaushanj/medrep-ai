@@ -2,19 +2,19 @@
 
 The backend uses Python and FastAPI.
 
-The frontend, RAG, Amazon OpenSearch, and Amazon Bedrock are planned.
+The RAG module (`ask_rag` in `backend/rag.py`) embeds questions with Amazon Bedrock, retrieves from Amazon OpenSearch, and generates answers with Amazon Bedrock. `POST /chat` is wired to `ask_rag`.
 
-Amazon OpenSearch is planned for retrieval. Amazon Bedrock is planned for LLM generation.
+The frontend remains planned.
 
 ```mermaid
 flowchart TD
     rep[Medical representative]
     frontend["Frontend (planned)"]
     api[FastAPI]
-    rag["RAG (planned)"]
-    opensearch["Amazon OpenSearch (planned retrieval)"]
-    bedrock["Amazon Bedrock (planned generation)"]
-    result[Answer and source documents]
+    rag["RAG ask_rag()"]
+    opensearch["Amazon OpenSearch (retrieval)"]
+    bedrock["Amazon Bedrock (embed + generation)"]
+    result[Answer and source]
 
     rep --> frontend
     frontend --> api
