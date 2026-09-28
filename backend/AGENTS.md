@@ -35,6 +35,7 @@ As the project grows, prefer separation such as:
 backend/
 ├── main.py
 ├── api/
+├    ├──schema/
 ├── models/
 ├── services/
 ├── repositories/
