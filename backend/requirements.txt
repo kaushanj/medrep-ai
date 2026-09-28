@@ -4,3 +4,5 @@ pytest
 httpx
 boto3
 opensearch-py
+python-dotenv
+pypdf

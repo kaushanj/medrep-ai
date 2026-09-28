@@ -2,7 +2,7 @@ import json
 import os
 
 import boto3
-from opensearchpy import OpenSearch, RequestsHttpConnection
+from opensearchpy import OpenSearch, RequestsHttpConnection, AWSV4SignerAuth
 
 
 def _bedrock_runtime():
@@ -10,16 +10,26 @@ def _bedrock_runtime():
     return boto3.client("bedrock-runtime", region_name=region)
 
 
-def _opensearch_client() -> OpenSearch:
+def opensearch_client() -> OpenSearch:
     host = os.environ["OPENSEARCH_HOST"]
     port = int(os.environ.get("OPENSEARCH_PORT", "443"))
     use_ssl = os.environ.get("OPENSEARCH_USE_SSL", "true").lower() == "true"
+    region = os.environ.get("AWS_REGION", "us-east-1")
+    credentials = boto3.Session().get_credentials()
+    auth = AWSV4SignerAuth(credentials, region, "aoss")
+
     return OpenSearch(
         hosts=[{"host": host, "port": port}],
+        http_auth=auth,
         use_ssl=use_ssl,
         verify_certs=use_ssl,
         connection_class=RequestsHttpConnection,
+        timeout=60,
     )
+
+
+# Backward-compatible alias for existing call sites.
+_opensearch_client = opensearch_client
 
 
 def embed_question(question: str) -> list[float]:
@@ -39,7 +49,7 @@ def embed_question(question: str) -> list[float]:
 
 
 def search_opensearch(embedding: list[float]) -> list[dict[str, str]]:
-    index = os.environ.get("OPENSEARCH_INDEX", "medrep-documents")
+    index = os.environ.get("OPENSEARCH_INDEX", "medrep-index")
     top_k = int(os.environ.get("RAG_TOP_K", "3"))
     client = _opensearch_client()
     query = {
