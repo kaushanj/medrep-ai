@@ -82,6 +82,19 @@ The endpoint should remain focused on HTTP/API concerns such as:
 
 The route handler should not contain the entire retrieval and answer-generation process as the project becomes larger.
 
+### RAG module (`ask_rag`)
+
+`backend/rag.py` provides `ask_rag(question)` which:
+
+1. Embeds the question with Amazon Bedrock.
+2. Searches Amazon OpenSearch (k-NN).
+3. Sends retrieved context to Amazon Bedrock for generation.
+4. Returns `{ "answer": "...", "source": "..." }` (singular `source` string).
+
+Configuration uses environment variables (for example `AWS_REGION`, `BEDROCK_EMBEDDING_MODEL_ID`, `BEDROCK_GENERATION_MODEL_ID`, `OPENSEARCH_HOST`, `OPENSEARCH_INDEX`, `RAG_TOP_K`). Secrets are not hardcoded.
+
+`POST /chat` is not yet connected to `ask_rag`; wiring is a separate step.
+
 ### Current temporary stub contract
 
 Until RAG is wired, `POST /chat` uses this temporary stub contract:
@@ -105,7 +118,7 @@ Response:
 
 - Request body field: `question` (string).
 - Response fields: `answer` (string echo of the question as `You asked: <question>`), `source` (fixed stub value `test.pdf`).
-- RAG, Amazon Bedrock, and OpenSearch remain planned and are not implemented by this stub.
+- The stub does not call `ask_rag`; Bedrock and OpenSearch are used only by the RAG module.
 
 The final production request and response schemas remain **TBD**.
 
@@ -127,13 +140,13 @@ Its responsibilities may include:
 - Returning the result to the API layer.
 - Handling expected application-level failures.
 
-The exact class, module, and interface structure is **TBD**.
+The RAG coordination entry point is `ask_rag(question)` in `backend/rag.py`. Connecting it to the API layer is still pending.
 
 The project should keep this layer simple until additional complexity requires further separation.
 
 ## RAG Layer
 
-The RAG layer is planned to provide answers grounded in product documents.
+The RAG layer is implemented as `ask_rag(question)` in `backend/rag.py` and provides answers grounded in product documents.
 
 Its responsibility is to:
 
@@ -259,13 +272,12 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - FastAPI is the selected backend framework.
 - `POST /chat` is implemented as a temporary stub endpoint.
 - The stub accepts `{ "question": "..." }` and returns `{ "answer": "You asked: ...", "source": "test.pdf" }`.
+- `ask_rag(question)` in `backend/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source}`.
 
 ### Planned
 
-- RAG-based question answering.
+- Wire `POST /chat` to `ask_rag`.
 - Retrieval from real product PDF content.
-- Amazon OpenSearch for retrieval.
-- Amazon Bedrock for answer generation.
 - Answers that include source information from real documents.
 - Authentication and authorization.
 
