@@ -2,7 +2,7 @@
 
 The backend uses Python and FastAPI.
 
-The RAG module (`ask_rag` in `backend/rag.py`) embeds questions with Amazon Bedrock, retrieves from Amazon OpenSearch, and generates answers with Amazon Bedrock. It is not yet connected to `POST /chat`.
+The RAG module (`ask_rag` in `backend/rag.py`) embeds questions with Amazon Bedrock, retrieves from Amazon OpenSearch, and generates answers with Amazon Bedrock. `POST /chat` is wired to `ask_rag`.
 
 The frontend remains planned.
 
@@ -18,7 +18,7 @@ flowchart TD
 
     rep --> frontend
     frontend --> api
-    api -.->|"not wired yet"| rag
+    api --> rag
     rag --> opensearch
     rag --> bedrock
     rag --> result
