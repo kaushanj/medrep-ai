@@ -161,7 +161,7 @@ When a PDF is uploaded to the configured MedRep S3 bucket, an S3 `ObjectCreated`
 3. Calls `services.ingest.ingest_pdf(bucket, key)`.
 4. Logs start/success/failure; re-raises on failure so Lambda surfaces the error.
 
-IaC: `infra/template.yaml` (SAM) declares the function, IAM (S3 GetObject, Bedrock `InvokeModel`, AOSS data-plane), environment variables, and S3 ObjectCreated trigger with suffix `.pdf` and optional prefix (default empty for bucket-root demos such as `Demo-pain-relief.pdf`).
+IaC: `infra/template.yaml` (SAM) points function CodeUri and layer ContentUri at the repo root so `sam build --use-container` mounts `backend/`. A root `Makefile` copies only `backend/handlers/` into the function artifact and stages `python/services`, `python/repositories`, plus `requirements-ingest.txt` deps into the ingest layer. IAM (S3 GetObject, Bedrock `InvokeModel`, AOSS data-plane), environment variables, and S3 ObjectCreated trigger with suffix `.pdf` and optional prefix (default empty for bucket-root demos such as `Demo-pain-relief.pdf`) are unchanged.
 
 Do not hardcode secrets or AWS credentials; use IAM roles and environment variables.
 
@@ -322,7 +322,7 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - `ask_rag(question)` in `backend/services/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source}`.
 - `backend/services/ingest.py` ingests S3 PDFs into OpenSearch `medrep-index` (PyPDF extract → chunk → Titan embed → index `{text, source, embedding}`).
 - S3 ObjectCreated Lambda handler `backend/handlers/s3_ingest.py` calls the shared ingest service.
-- SAM template `infra/template.yaml` defines Lambda, IAM, env vars, and `.pdf` ObjectCreated trigger (deploy is an operator step).
+- SAM template `infra/template.yaml` packages a thin `handlers`-only function zip plus an ingest layer (`python/services`, `python/repositories`, deps) via the repo-root Makefile; source of truth remains under `backend/`. IAM, env vars, and `.pdf` ObjectCreated trigger are unchanged (deploy is an operator step).
 
 ### Planned
 

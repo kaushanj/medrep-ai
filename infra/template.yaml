@@ -38,21 +38,30 @@ Resources:
     Properties:
       BucketName: !Ref ProductPdfBucketName
 
+  IngestDependenciesLayer:
+    Type: AWS::Serverless::LayerVersion
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      ContentUri: ..
+      CompatibleRuntimes:
+        - python3.12
+
   IngestFunction:
     Type: AWS::Serverless::Function
     Metadata:
-      BuildMethod: python3.12
-      BuildProperties:
-        RequirementsFile: requirements-ingest.txt
+      BuildMethod: makefile
     Properties:
       FunctionName: medrep-s3-ingest
-      CodeUri: ../backend/
+      CodeUri: ..
       Handler: handlers.s3_ingest.handler
       Runtime: python3.12
       Timeout: 300
       MemorySize: 512
       Architectures:
         - x86_64
+      Layers:
+        - !Ref IngestDependenciesLayer
       Environment:
         Variables:
           OPENSEARCH_HOST: !Ref OpenSearchHost
