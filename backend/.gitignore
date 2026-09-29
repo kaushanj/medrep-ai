@@ -1,4 +1,4 @@
-# Local ignores under backend/ (also honored by SAM packaging for CodeUri).
+# Local ignores under backend/ (venv, caches, secrets).
 .venv/
 venv/
 .pytest_cache/
