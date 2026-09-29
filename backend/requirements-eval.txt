@@ -1,0 +1,7 @@
+# Offline RAG evaluation only (issue #17). Not used by Lambda/API.
+# Install into a venv used for eval: pip install -r requirements-eval.txt
+deepeval==4.2.6
+aiobotocore==3.9.1
+# aiobotocore 3.9.1 pins botocore; keep boto3 aligned for shared ask_rag + judge use.
+botocore>=1.43.66,<1.43.76
+boto3>=1.43.66,<1.43.76
