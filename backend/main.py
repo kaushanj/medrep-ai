@@ -1,20 +1,12 @@
 from dotenv import load_dotenv
 from fastapi import FastAPI
-from pydantic import BaseModel
+
+from api.schema import ChatRequest, ChatResponse
+from services.rag import ask_rag
 
 load_dotenv()
-from rag import ask_rag
 
 app = FastAPI()
-
-
-class ChatRequest(BaseModel):
-    question: str
-
-
-class ChatResponse(BaseModel):
-    answer: str
-    source: str
 
 
 @app.post("/chat", response_model=ChatResponse)
