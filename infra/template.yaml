@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: MedRep AI S3-triggered PDF ingestion Lambda
+
+Parameters:
+  ProductPdfBucketName:
+    Type: String
+    Description: S3 bucket that receives product PDFs
+  OpenSearchHost:
+    Type: String
+    Description: OpenSearch Serverless collection endpoint hostname
+  OpenSearchIndex:
+    Type: String
+    Default: medrep-index
+  BedrockEmbeddingModelId:
+    Type: String
+    Default: amazon.titan-embed-text-v2:0
+  BedrockGenerationModelId:
+    Type: String
+    Default: amazon.nova-lite-v1:0
+  OpenSearchPort:
+    Type: String
+    Default: "443"
+  OpenSearchUseSsl:
+    Type: String
+    Default: "true"
+  S3KeyPrefix:
+    Type: String
+    Default: ""
+    Description: Optional S3 key prefix filter for ObjectCreated notifications (empty = bucket root)
+
+Conditions:
+  HasS3KeyPrefix: !Not [!Equals [!Ref S3KeyPrefix, ""]]
+
+Resources:
+  ProductPdfBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref ProductPdfBucketName
+
+  IngestDependenciesLayer:
+    Type: AWS::Serverless::LayerVersion
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      ContentUri: ..
+      CompatibleRuntimes:
+        - python3.12
+
+  IngestFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      FunctionName: medrep-s3-ingest
+      CodeUri: ..
+      Handler: handlers.s3_ingest.handler
+      Runtime: python3.12
+      Timeout: 300
+      MemorySize: 512
+      Architectures:
+        - x86_64
+      Layers:
+        - !Ref IngestDependenciesLayer
+      Environment:
+        Variables:
+          OPENSEARCH_HOST: !Ref OpenSearchHost
+          OPENSEARCH_INDEX: !Ref OpenSearchIndex
+          OPENSEARCH_PORT: !Ref OpenSearchPort
+          OPENSEARCH_USE_SSL: !Ref OpenSearchUseSsl
+          BEDROCK_EMBEDDING_MODEL_ID: !Ref BedrockEmbeddingModelId
+          BEDROCK_GENERATION_MODEL_ID: !Ref BedrockGenerationModelId
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Sid: S3ReadProductPdfs
+              Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub
+                - arn:aws:s3:::${Bucket}/${Prefix}*
+                - Bucket: !Ref ProductPdfBucketName
+                  Prefix: !Ref S3KeyPrefix
+            - Sid: BedrockInvokeEmbedding
+              Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: "*"
+            - Sid: OpenSearchServerlessDataAccess
+              Effect: Allow
+              Action:
+                - aoss:APIAccessAll
+              Resource: "*"
+      Events:
+        ProductPdfCreated:
+          Type: S3
+          Properties:
+            Bucket: !Ref ProductPdfBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules: !If
+                  - HasS3KeyPrefix
+                  - - Name: prefix
+                      Value: !Ref S3KeyPrefix
+                    - Name: suffix
+                      Value: .pdf
+                  - - Name: suffix
+                      Value: .pdf
+
+Outputs:
+  IngestFunctionArn:
+    Description: ARN of the S3 ingest Lambda
+    Value: !GetAtt IngestFunction.Arn
+  IngestFunctionRoleArn:
+    Description: Execution role ARN (add to AOSS data-access policy if needed)
+    Value: !GetAtt IngestFunctionRole.Arn

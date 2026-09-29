@@ -1,0 +1,16 @@
+# Local ignores under backend/ (venv, caches, secrets).
+.venv/
+venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.env.*
+!.env.example
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+.DS_Store

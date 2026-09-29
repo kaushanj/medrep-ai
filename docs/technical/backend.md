@@ -30,6 +30,7 @@ The backend is responsible for:
 - Returning source information with supported answers.
 - Handling expected failures in a controlled way.
 - Keeping API-specific logic separate from application logic as the project grows.
+- Ingesting product PDFs from S3 into OpenSearch (shared ingest service used by CLI and S3-triggered Lambda).
 
 The backend should not contain product or medical rules that are not defined by the product or domain documentation.
 
@@ -82,14 +83,18 @@ The endpoint should remain focused on HTTP/API concerns such as:
 
 The route handler should not contain the entire retrieval and answer-generation process as the project becomes larger.
 
+Request/response Pydantic models live in `backend/api/schema/`. `backend/main.py` loads configuration, creates the FastAPI app, and defines `POST /chat`.
+
 ### RAG module (`ask_rag`)
 
-`backend/rag.py` provides `ask_rag(question)` which:
+`backend/services/rag.py` provides `ask_rag(question)` which:
 
 1. Embeds the question with Amazon Bedrock.
 2. Searches Amazon OpenSearch (k-NN).
 3. Sends retrieved context to Amazon Bedrock for generation.
 4. Returns `{ "answer": "...", "source": "..." }` (singular `source` string).
+
+The OpenSearch client lives in `backend/repositories/opensearch.py` and is shared by RAG and ingest.
 
 Configuration uses environment variables (for example `AWS_REGION`, `BEDROCK_EMBEDDING_MODEL_ID`, `BEDROCK_GENERATION_MODEL_ID`, `OPENSEARCH_HOST`, `OPENSEARCH_INDEX`, `RAG_TOP_K`). Secrets are not hardcoded.
 
@@ -117,16 +122,16 @@ Response:
 - Request body field: `question` (string).
 - Response fields: `answer` and `source` from `ask_rag` (singular `source` string; may be empty when no documents are found).
 
-No additional API endpoints are defined at this stage. PDF ingestion is a script/CLI module (`backend/ingest.py`), not an HTTP route.
+No additional API endpoints are defined at this stage. PDF ingestion is not an HTTP route; it is shared service code invoked by CLI and by an S3-triggered Lambda.
 
-### Document ingestion (`ingest.py`)
+### Document ingestion
 
-`backend/ingest.py` indexes product PDFs from S3 into OpenSearch for RAG:
+`backend/services/ingest.py` indexes product PDFs from S3 into OpenSearch for RAG:
 
 1. Download PDF bytes from S3.
 2. Extract text with PyPDF.
 3. Split text into overlapping character chunks.
-4. Embed each chunk with Amazon Titan Embeddings (`amazon.titan-embed-text-v2:0` by default, same as `rag.embed_question`).
+4. Embed each chunk with Amazon Titan Embeddings (`amazon.titan-embed-text-v2:0` by default, same as `services.rag.embed_question`).
 5. Index documents into OpenSearch with body `{ "text", "source", "embedding" }`.
 
 | Setting | Provisional default | Notes |
@@ -137,14 +142,37 @@ No additional API endpoints are defined at this stage. PDF ingestion is a script
 | Embedding model | `amazon.titan-embed-text-v2:0` | Override with `BEDROCK_EMBEDDING_MODEL_ID` |
 | Document fields | `text`, `source`, `embedding` | `source` is the PDF filename |
 
+Reusable entry point: `ingest_pdf(bucket, key, …)` (CLI, Lambda, and tests).
+
 CLI (demo PDF):
 
 ```bash
 cd backend
 python ingest.py --bucket <bucket> --key Demo-pain-relief.pdf
+# or: python -m services.ingest --bucket <bucket> --key Demo-pain-relief.pdf
 ```
 
-Environment: `S3_BUCKET`, `S3_PDF_KEY`, `OPENSEARCH_HOST`, `OPENSEARCH_INDEX`, `AWS_REGION`, plus standard AWS credentials. AOSS signing uses the same `AWSV4SignerAuth` path as `rag.py`.
+#### S3 → Lambda ingestion
+
+When a PDF is uploaded to the configured MedRep S3 bucket, an S3 `ObjectCreated` notification invokes a thin Lambda (`backend/handlers/s3_ingest.py`) that:
+
+1. Reads bucket and object key from the S3 event (URL-decodes the key).
+2. Skips non-`.pdf` keys.
+3. Calls `services.ingest.ingest_pdf(bucket, key)`.
+4. Logs start/success/failure; re-raises on failure so Lambda surfaces the error.
+
+IaC: `infra/template.yaml` (SAM) points function CodeUri and layer ContentUri at the repo root so `sam build --use-container` mounts `backend/`. A root `Makefile` copies only `backend/handlers/` into the function artifact and stages `python/services`, `python/repositories`, plus `requirements-ingest.txt` deps into the ingest layer. IAM (S3 GetObject, Bedrock `InvokeModel`, AOSS data-plane), environment variables, and S3 ObjectCreated trigger with suffix `.pdf` and optional prefix (default empty for bucket-root demos such as `Demo-pain-relief.pdf`) are unchanged.
+
+Do not hardcode secrets or AWS credentials; use IAM roles and environment variables.
+
+**Operator follow-up (not automated by agents):**
+
+1. Deploy the SAM template (`sam build` / `sam deploy` — human-run).
+2. Ensure the OpenSearch Serverless data-access policy includes the Lambda execution role (IAM on the role is necessary but often insufficient for AOSS).
+3. Re-upload one PDF (objects present before the notification was configured are not auto-ingested; use backfill/re-upload).
+4. Confirm chunks appear in `medrep-index`.
+
+Environment: `S3_BUCKET`, `S3_PDF_KEY`, `OPENSEARCH_HOST`, `OPENSEARCH_INDEX`, `AWS_REGION`, plus standard AWS credentials for CLI. AOSS signing uses the same `AWSV4SignerAuth` path as RAG via `repositories.opensearch`.
 
 ## Service Layer
 
@@ -162,13 +190,13 @@ Its responsibilities may include:
 - Returning the result to the API layer.
 - Handling expected application-level failures.
 
-The RAG coordination entry point is `ask_rag(question)` in `backend/rag.py`. `POST /chat` calls it with the request question.
+The RAG coordination entry point is `ask_rag(question)` in `backend/services/rag.py`. `POST /chat` calls it with the request question. Document ingestion lives in `backend/services/ingest.py`.
 
 The project should keep this layer simple until additional complexity requires further separation.
 
 ## RAG Layer
 
-The RAG layer is implemented as `ask_rag(question)` in `backend/rag.py` and provides answers grounded in product documents.
+The RAG layer is implemented as `ask_rag(question)` in `backend/services/rag.py` and provides answers grounded in product documents.
 
 Its responsibility is to:
 
@@ -239,6 +267,7 @@ Examples include:
 - Answer-generation failures.
 - External service failures.
 - Authentication or authorization failures after authentication is added.
+- Ingest failures in Lambda (logged and re-raised so the invocation fails visibly).
 
 The backend should avoid exposing unnecessary internal error details to users.
 
@@ -276,6 +305,7 @@ Tests should focus on observable backend behavior, including:
 - RAG coordination.
 - Controlled failure behavior.
 - Answer and source responses.
+- S3 Lambda handler behavior with a sample ObjectCreated event (mocked `ingest_pdf`).
 
 External dependencies should be isolated when appropriate so backend behavior can be tested reliably.
 
@@ -287,9 +317,12 @@ The full TDD workflow is defined separately and should not be duplicated in this
 
 - Python is the selected backend language.
 - FastAPI is the selected backend framework.
+- Package layout under `backend/`: `api/schema`, `services`, `repositories`, `models`, `utils`, `handlers`, `tests`.
 - `POST /chat` accepts `{ "question": "..." }`, calls `ask_rag(question)`, and returns `{ "answer", "source" }`.
-- `ask_rag(question)` in `backend/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source}`.
-- `backend/ingest.py` ingests S3 PDFs into OpenSearch `medrep-index` (PyPDF extract → chunk → Titan embed → index `{text, source, embedding}`).
+- `ask_rag(question)` in `backend/services/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source}`.
+- `backend/services/ingest.py` ingests S3 PDFs into OpenSearch `medrep-index` (PyPDF extract → chunk → Titan embed → index `{text, source, embedding}`).
+- S3 ObjectCreated Lambda handler `backend/handlers/s3_ingest.py` calls the shared ingest service.
+- SAM template `infra/template.yaml` packages a thin `handlers`-only function zip plus an ingest layer (`python/services`, `python/repositories`, deps) via the repo-root Makefile; source of truth remains under `backend/`. IAM, env vars, and `.pdf` ObjectCreated trigger are unchanged (deploy is an operator step).
 
 ### Planned
 
@@ -298,7 +331,6 @@ The full TDD workflow is defined separately and should not be duplicated in this
 
 ### TBD
 
-- Service-layer structure.
 - Final Bedrock generation model and prompt design (code default exists).
 - Whether provisional chunk size/overlap should change after evaluation.
 - Retrieval top-k tuning and relevance threshold.
@@ -307,7 +339,7 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - Error response format.
 - Retry behavior.
 - Final configuration approach.
-- Final deployment architecture.
+- Final deployment architecture beyond the ingest SAM template.
 - OpenSearch k-NN mapping / vector dimension configuration details.
 
 ## Open Technical Questions

@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import ingest
+from services import ingest
 
 
 # --- chunk_text boundaries (chunk_size min=1; overlap in [0, chunk_size)) ---
@@ -78,7 +78,7 @@ def test_extract_text_from_pdf_concatenates_pages():
     reader = MagicMock()
     reader.pages = [page1, page2]
 
-    with patch("ingest.PdfReader", return_value=reader) as mock_reader:
+    with patch("services.ingest.PdfReader", return_value=reader) as mock_reader:
         text = ingest.extract_text_from_pdf(pdf_bytes)
 
     mock_reader.assert_called_once()
@@ -94,7 +94,7 @@ def test_download_pdf_from_s3_reads_object_body():
     s3 = MagicMock()
     s3.get_object.return_value = {"Body": body}
 
-    with patch("ingest.boto3.client", return_value=s3) as mock_client:
+    with patch("services.ingest.boto3.client", return_value=s3) as mock_client:
         result = ingest.download_pdf_from_s3("my-bucket", "Demo-pain-relief.pdf")
 
     mock_client.assert_called_once_with("s3")
@@ -412,10 +412,10 @@ def test_ingest_pdf_indexes_chunks_with_text_source_and_embedding():
     opensearch.index.side_effect = capture_index
 
     with (
-        patch("ingest.download_pdf_from_s3", return_value=pdf_bytes) as mock_download,
-        patch("ingest.extract_text_from_pdf", return_value=extracted) as mock_extract,
-        patch("ingest.embed_text", return_value=embedding) as mock_embed,
-        patch("ingest.opensearch_client", return_value=opensearch),
+        patch("services.ingest.download_pdf_from_s3", return_value=pdf_bytes) as mock_download,
+        patch("services.ingest.extract_text_from_pdf", return_value=extracted) as mock_extract,
+        patch("services.ingest.embed_text", return_value=embedding) as mock_embed,
+        patch("services.ingest.opensearch_client", return_value=opensearch),
         patch.dict(
             "os.environ",
             {"OPENSEARCH_INDEX": "medrep-index"},
@@ -450,11 +450,11 @@ def test_ingest_pdf_verifies_min_count_equals_chunk_count():
     opensearch.index.return_value = {"result": "created"}
 
     with (
-        patch("ingest.download_pdf_from_s3", return_value=b"%PDF"),
-        patch("ingest.extract_text_from_pdf", return_value="A" * 501),
-        patch("ingest.embed_text", return_value=[0.1]),
-        patch("ingest.opensearch_client", return_value=opensearch),
-        patch("ingest.verify_indexed_documents", return_value=2) as mock_verify,
+        patch("services.ingest.download_pdf_from_s3", return_value=b"%PDF"),
+        patch("services.ingest.extract_text_from_pdf", return_value="A" * 501),
+        patch("services.ingest.embed_text", return_value=[0.1]),
+        patch("services.ingest.opensearch_client", return_value=opensearch),
+        patch("services.ingest.verify_indexed_documents", return_value=2) as mock_verify,
     ):
         count = ingest.ingest_pdf("bucket", "Demo-pain-relief.pdf")
 
@@ -480,10 +480,10 @@ def test_ingest_pdf_defaults_index_to_medrep_index():
     }
 
     with (
-        patch("ingest.download_pdf_from_s3", return_value=b"%PDF"),
-        patch("ingest.extract_text_from_pdf", return_value="short text"),
-        patch("ingest.embed_text", return_value=[0.5]),
-        patch("ingest.opensearch_client", return_value=opensearch),
+        patch("services.ingest.download_pdf_from_s3", return_value=b"%PDF"),
+        patch("services.ingest.extract_text_from_pdf", return_value="short text"),
+        patch("services.ingest.embed_text", return_value=[0.5]),
+        patch("services.ingest.opensearch_client", return_value=opensearch),
         patch.dict("os.environ", {}, clear=True),
     ):
         count = ingest.ingest_pdf("b", "file.pdf")
@@ -497,10 +497,10 @@ def test_ingest_pdf_empty_extraction_indexes_nothing():
     opensearch = MagicMock()
 
     with (
-        patch("ingest.download_pdf_from_s3", return_value=b"%PDF"),
-        patch("ingest.extract_text_from_pdf", return_value=""),
-        patch("ingest.embed_text") as mock_embed,
-        patch("ingest.opensearch_client", return_value=opensearch),
+        patch("services.ingest.download_pdf_from_s3", return_value=b"%PDF"),
+        patch("services.ingest.extract_text_from_pdf", return_value=""),
+        patch("services.ingest.embed_text") as mock_embed,
+        patch("services.ingest.opensearch_client", return_value=opensearch),
     ):
         count = ingest.ingest_pdf("bucket", "empty.pdf")
 
@@ -515,10 +515,10 @@ def test_ingest_pdf_aborts_when_index_not_ready():
     opensearch.indices.exists.return_value = False
 
     with (
-        patch("ingest.download_pdf_from_s3", return_value=b"%PDF"),
-        patch("ingest.extract_text_from_pdf", return_value="text"),
-        patch("ingest.embed_text") as mock_embed,
-        patch("ingest.opensearch_client", return_value=opensearch),
+        patch("services.ingest.download_pdf_from_s3", return_value=b"%PDF"),
+        patch("services.ingest.extract_text_from_pdf", return_value="text"),
+        patch("services.ingest.embed_text") as mock_embed,
+        patch("services.ingest.opensearch_client", return_value=opensearch),
     ):
         with pytest.raises(RuntimeError, match="does not exist"):
             ingest.ingest_pdf("bucket", "Demo-pain-relief.pdf")
@@ -533,11 +533,11 @@ def test_ingest_pdf_raises_when_verification_fails():
     opensearch.count.return_value = {"count": 0}
 
     with (
-        patch("ingest.download_pdf_from_s3", return_value=b"%PDF"),
-        patch("ingest.extract_text_from_pdf", return_value="chunk text"),
-        patch("ingest.embed_text", return_value=[0.1]),
-        patch("ingest.opensearch_client", return_value=opensearch),
-        patch("ingest.verify_indexed_documents", side_effect=RuntimeError("count is 0")),
+        patch("services.ingest.download_pdf_from_s3", return_value=b"%PDF"),
+        patch("services.ingest.extract_text_from_pdf", return_value="chunk text"),
+        patch("services.ingest.embed_text", return_value=[0.1]),
+        patch("services.ingest.opensearch_client", return_value=opensearch),
+        patch("services.ingest.verify_indexed_documents", side_effect=RuntimeError("count is 0")),
     ):
         with pytest.raises(RuntimeError, match="count"):
             ingest.ingest_pdf("bucket", "Demo-pain-relief.pdf")
