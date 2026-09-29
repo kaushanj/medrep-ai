@@ -33,10 +33,10 @@ Conditions:
   HasS3KeyPrefix: !Not [!Equals [!Ref S3KeyPrefix, ""]]
 
 Resources:
-  ProductPdfBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Ref ProductPdfBucketName
+  # ProductPdfBucket:
+  #   Type: AWS::S3::Bucket
+  #   Properties:
+  #     BucketName: !Ref ProductPdfBucketName
 
   IngestDependenciesLayer:
     Type: AWS::Serverless::LayerVersion
@@ -79,7 +79,7 @@ Resources:
                 - s3:GetObject
               Resource: !Sub
                 - arn:aws:s3:::${Bucket}/${Prefix}*
-                - Bucket: !Ref ProductPdfBucketName
+                - Bucket: !Sub ${ProductPdfBucketName}
                   Prefix: !Ref S3KeyPrefix
             - Sid: BedrockInvokeEmbedding
               Effect: Allow
@@ -91,22 +91,6 @@ Resources:
               Action:
                 - aoss:APIAccessAll
               Resource: "*"
-      Events:
-        ProductPdfCreated:
-          Type: S3
-          Properties:
-            Bucket: !Ref ProductPdfBucket
-            Events: s3:ObjectCreated:*
-            Filter:
-              S3Key:
-                Rules: !If
-                  - HasS3KeyPrefix
-                  - - Name: prefix
-                      Value: !Ref S3KeyPrefix
-                    - Name: suffix
-                      Value: .pdf
-                  - - Name: suffix
-                      Value: .pdf
 
 Outputs:
   IngestFunctionArn:
