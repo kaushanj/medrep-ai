@@ -3,6 +3,7 @@ import os
 
 import boto3
 
+from utils.constants import DEFAULT_GENERATION_MODEL_ID
 from repositories.opensearch import opensearch_client
 
 # Re-export for callers/tests that historically imported from rag.
@@ -62,7 +63,7 @@ def search_opensearch(embedding: list[float]) -> list[dict[str, str]]:
 def generate_answer(question: str, context: str) -> str:
     model_id = os.environ.get(
         "BEDROCK_GENERATION_MODEL_ID",
-        "amazon.nova-lite-v1:0",
+        DEFAULT_GENERATION_MODEL_ID,
     )
     client = _bedrock_runtime()
     prompt = (
