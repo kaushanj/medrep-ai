@@ -26,11 +26,52 @@ def _default_metrics_fn(
 
 
 
+_REQUIRED_CASE_FIELDS = ("id", "question", "expected_source", "expected_facts")
+
+
 def load_cases(path: str | Path | None = None) -> list[dict[str, Any]]:
     cases_path = Path(path) if path is not None else DEFAULT_CASES_PATH
     with cases_path.open(encoding="utf-8") as f:
-        payload = json.load(f)
-    return payload["cases"]
+        try:
+            payload = json.load(f)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"invalid JSON in evaluation cases file {cases_path}: {exc}"
+            ) from exc
+
+    if not isinstance(payload, dict) or "cases" not in payload:
+        raise ValueError(
+            f"evaluation cases file {cases_path} is missing required top-level "
+            f"key 'cases'"
+        )
+
+    cases = payload["cases"]
+    if not isinstance(cases, list):
+        raise ValueError(
+            f"evaluation cases file {cases_path}: 'cases' must be a list, "
+            f"got {type(cases).__name__}"
+        )
+
+    for index, case in enumerate(cases):
+        if not isinstance(case, dict):
+            raise ValueError(
+                f"evaluation cases file {cases_path}: case at index {index} "
+                f"must be an object, got {type(case).__name__}"
+            )
+        missing = [field for field in _REQUIRED_CASE_FIELDS if field not in case]
+        if missing:
+            case_id = case.get("id", f"index {index}")
+            raise ValueError(
+                f"evaluation case {case_id!r} is missing required field(s): "
+                f"{', '.join(missing)}"
+            )
+        if not isinstance(case["expected_facts"], list):
+            raise ValueError(
+                f"evaluation case {case['id']!r}: 'expected_facts' must be a "
+                f"list, got {type(case['expected_facts']).__name__}"
+            )
+
+    return cases
 
 
 def check_source(actual_source: str, expected_source: str) -> dict[str, Any]:
