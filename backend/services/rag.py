@@ -92,6 +92,7 @@ def ask_rag(question: str) -> dict[str, str]:
         return {
             "answer": "No relevant documents found.",
             "source": "",
+            "context": "",
         }
 
     top = results[0]
@@ -99,4 +100,5 @@ def ask_rag(question: str) -> dict[str, str]:
     return {
         "answer": answer,
         "source": top["source"],
+        "context": top["text"],
     }
