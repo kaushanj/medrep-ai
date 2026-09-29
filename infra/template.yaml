@@ -17,6 +17,7 @@ Parameters:
     Default: amazon.titan-embed-text-v2:0
   BedrockGenerationModelId:
     Type: String
+    # Keep in sync with DEFAULT_GENERATION_MODEL_ID in backend/utils/constants.py
     Default: amazon.nova-lite-v1:0
   OpenSearchPort:
     Type: String
