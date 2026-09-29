@@ -20,6 +20,7 @@ def test_ask_rag_returns_answer_and_source():
     assert result == {
         "answer": "Panadol is used for pain relief.",
         "source": "panadol.pdf",
+        "context": "Panadol is for pain.",
     }
     mock_embed.assert_called_once_with("What is Panadol used for?")
     mock_search.assert_called_once_with([0.1, 0.2])
@@ -62,8 +63,9 @@ def test_ask_rag_empty_retrieval_returns_controlled_response():
     ):
         result = rag.ask_rag("Unknown product?")
 
-    assert set(result.keys()) == {"answer", "source"}
+    assert set(result.keys()) == {"answer", "source", "context"}
     assert isinstance(result["answer"], str)
     assert result["answer"]
     assert result["source"] == ""
+    assert result["context"] == ""
     mock_generate.assert_not_called()

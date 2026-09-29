@@ -92,13 +92,13 @@ Request/response Pydantic models live in `backend/api/schema/`. `backend/main.py
 1. Embeds the question with Amazon Bedrock.
 2. Searches Amazon OpenSearch (k-NN).
 3. Sends retrieved context to Amazon Bedrock for generation.
-4. Returns `{ "answer": "...", "source": "..." }` (singular `source` string).
+4. Returns `{ "answer": "...", "source": "...", "context": "..." }` (singular `source` string; `context` is the top retrieved chunk text, or empty when no hits).
 
 The OpenSearch client lives in `backend/repositories/opensearch.py` and is shared by RAG and ingest.
 
 Configuration uses environment variables (for example `AWS_REGION`, `BEDROCK_EMBEDDING_MODEL_ID`, `BEDROCK_GENERATION_MODEL_ID`, `OPENSEARCH_HOST`, `OPENSEARCH_INDEX`, `RAG_TOP_K`). Secrets are not hardcoded.
 
-`POST /chat` calls `ask_rag(question)` and returns its `{ "answer", "source" }` result.
+`POST /chat` calls `ask_rag(question)` and returns only `{ "answer", "source" }` to clients (`context` is for offline eval reuse).
 
 ### POST /chat contract
 
@@ -347,7 +347,7 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - FastAPI is the selected backend framework.
 - Package layout under `backend/`: `api/schema`, `services`, `repositories`, `models`, `utils`, `handlers`, `tests`.
 - `POST /chat` accepts `{ "question": "..." }`, calls `ask_rag(question)`, and returns `{ "answer", "source" }`.
-- `ask_rag(question)` in `backend/services/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source}`.
+- `ask_rag(question)` in `backend/services/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source, context}`.
 - `backend/services/ingest.py` ingests S3 PDFs into OpenSearch `medrep-index` (page extract → clean → token chunk → Titan embed → idempotent index with metadata; `source` kept for RAG).
 - S3 ObjectCreated Lambda handler `backend/handlers/s3_ingest.py` calls the shared ingest service.
 - SAM template `infra/template.yaml` packages a thin `handlers`-only function zip plus an ingest layer (`python/services`, `python/repositories`, deps) via the repo-root Makefile; source of truth remains under `backend/`. IAM, env vars, and `.pdf` ObjectCreated trigger are unchanged (deploy is an operator step).
