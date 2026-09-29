@@ -98,7 +98,32 @@ The OpenSearch client lives in `backend/repositories/opensearch.py` and is share
 
 Configuration uses environment variables (for example `AWS_REGION`, `BEDROCK_EMBEDDING_MODEL_ID`, `BEDROCK_GENERATION_MODEL_ID`, `OPENSEARCH_HOST`, `OPENSEARCH_INDEX`, `RAG_TOP_K`). Secrets are not hardcoded.
 
-`POST /chat` calls `ask_rag(question)` and returns only `{ "answer", "source" }` to clients (`context` is for offline eval reuse). Offline RAG evaluation (`backend/eval/`) runs deterministic source/facts checks plus DeepEval Faithfulness, Answer Relevancy, and Contextual Relevancy against one `ask_rag` result per golden case (Bedrock judge via existing AWS credentials; `backend/requirements-eval.txt`).
+`POST /chat` calls `ask_rag(question)` and returns only `{ "answer", "source" }` to clients (`context` is for offline eval reuse).
+
+#### Offline RAG evaluation
+
+`backend/eval/` runs golden cases from `backend/eval/cases.json` against one `ask_rag` result per case. Unit tests cover local load/validate and check logic without live AWS.
+
+**Install** (eval-only deps; not used by Lambda/API):
+
+```bash
+cd backend
+pip install -r requirements.txt -r requirements-eval.txt
+```
+
+**Configure** via `backend/.env` (or the environment) and standard AWS credentials. Required for a live run: `OPENSEARCH_HOST`, `AWS_REGION`, and usual Bedrock/OpenSearch settings (`OPENSEARCH_INDEX`, `BEDROCK_EMBEDDING_MODEL_ID`, `BEDROCK_GENERATION_MODEL_ID`, optional `BEDROCK_EVAL_MODEL_ID` for the DeepEval judge). Do not commit secrets.
+
+**Run:**
+
+```bash
+cd backend
+python -m eval.evaluate
+# optional path: python -m eval.evaluate path/to/cases.json
+```
+
+**Cost:** A live run calls Bedrock for RAG (embed + generate) and again for DeepEval judges, so it incurs Bedrock usage/cost.
+
+**Checks:** Deterministic checks compare `source` to `expected_source` and require each `expected_facts` string to appear in the answer (case-insensitive). DeepEval metrics (Faithfulness, Answer Relevancy, Contextual Relevancy) use a Bedrock judge on the same retrieval context; they are skipped when context is empty.
 
 ### POST /chat contract
 
