@@ -47,9 +47,11 @@ METADATA_FIELD_TYPES: dict[str, str] = {
 
 _SECTION_HEADING_RE = re.compile(
     r"^(?:"
-    r"\d+(?:\.\d+)*\.?\s+\S.+"  # numbered heading
+    r"\d+\.\s+\S.+"          # 1. NAME...
     r"|"
-    r"[A-Z][A-Z0-9\s\-/,&()]{2,100}"  # ALL-CAPS heading
+    r"\d+(?:\.\d+)+\s+\S.+" # 4.1 Therapeutic...
+    r"|"
+    r"[A-Z][A-Z0-9\s\-/,&()]{2,100}"
     r")$"
 )
 _VERSION_RE = re.compile(

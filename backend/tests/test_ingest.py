@@ -135,6 +135,15 @@ def test_chunk_text_splits_oversized_paragraph_on_words_not_fixed_chars():
     assert " ".join(chunks).split() == words.split()
 
 
+def test_numbered_section_heading():
+    assert ingest._is_section_heading("1. NAME OF THE MEDICINAL PRODUCT") is True
+    assert ingest._is_section_heading("4.1 Therapeutic indications") is True
+
+
+def test_packaging_text_is_not_section_heading():
+    assert ingest._is_section_heading("1 x 1.5 ml") is False
+
+
 def test_chunk_pages_attaches_section_heading_to_following_chunk():
     pages = [
         {
