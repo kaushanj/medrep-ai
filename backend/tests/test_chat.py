@@ -71,9 +71,9 @@ def test_chat_full_rag_flow_returns_answer_and_source():
         return grounded_answer
 
     with (
-        patch("rag.embed_question", side_effect=embed) as mock_embed,
-        patch("rag.search_opensearch", side_effect=search) as mock_search,
-        patch("rag.generate_answer", side_effect=generate) as mock_generate,
+        patch("services.rag.embed_question", side_effect=embed) as mock_embed,
+        patch("services.rag.search_opensearch", side_effect=search) as mock_search,
+        patch("services.rag.generate_answer", side_effect=generate) as mock_generate,
     ):
         response = client.post("/chat", json={"question": question})
 

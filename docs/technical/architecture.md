@@ -1,17 +1,25 @@
 # Architecture
 
-The backend uses Python and FastAPI.
+The backend uses Python and FastAPI with a layered package layout under `backend/` (`api/schema`, `services`, `repositories`, `handlers`).
 
-Product PDFs in S3 are ingested by `backend/ingest.py` (script/CLI, not an HTTP API): extract text with PyPDF, chunk, embed with Amazon Titan Embeddings via Bedrock, and index into OpenSearch (`medrep-index`) with fields `{text, source, embedding}`.
+Product PDFs in S3 are ingested into OpenSearch (`medrep-index`) with fields `{text, source, embedding}`:
 
-The RAG module (`ask_rag` in `backend/rag.py`) embeds questions with Amazon Bedrock, retrieves from Amazon OpenSearch, and generates answers with Amazon Bedrock. `POST /chat` is wired to `ask_rag`.
+1. **S3 ObjectCreated** (suffix `.pdf`) invokes Lambda `handlers.s3_ingest.handler`.
+2. The handler calls shared `services.ingest.ingest_pdf` (download → PyPDF extract → chunk → Titan embed via Bedrock → index).
+3. The same ingest service is available via CLI: `python ingest.py --bucket … --key …` or `python -m services.ingest`.
+
+Objects uploaded before the S3 notification existed are not auto-ingested; re-upload or run the CLI for backfill. Live deploy and one-PDF verification are operator steps (see `docs/technical/backend.md`).
+
+The RAG module (`ask_rag` in `backend/services/rag.py`) embeds questions with Amazon Bedrock, retrieves from Amazon OpenSearch, and generates answers with Amazon Bedrock. `POST /chat` is wired to `ask_rag`.
 
 The frontend remains planned.
 
 ```mermaid
 flowchart TD
     s3["S3 product PDFs"]
-    ingest["ingest.py (CLI)"]
+    lambda["Lambda s3_ingest"]
+    ingest["services.ingest.ingest_pdf"]
+    cli["CLI ingest.py / -m services.ingest"]
     rep[Medical representative]
     frontend["Frontend (planned)"]
     api[FastAPI]
@@ -20,7 +28,9 @@ flowchart TD
     bedrock["Amazon Bedrock (embed + generation)"]
     result[Answer and source]
 
-    s3 --> ingest
+    s3 -->|"ObjectCreated .pdf"| lambda
+    lambda --> ingest
+    cli --> ingest
     ingest --> opensearch
     ingest --> bedrock
     rep --> frontend
