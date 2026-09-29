@@ -129,18 +129,42 @@ No additional API endpoints are defined at this stage. PDF ingestion is not an H
 `backend/services/ingest.py` indexes product PDFs from S3 into OpenSearch for RAG:
 
 1. Download PDF bytes from S3.
-2. Extract text with PyPDF.
-3. Split text into overlapping character chunks.
-4. Embed each chunk with Amazon Titan Embeddings (`amazon.titan-embed-text-v2:0` by default, same as `services.rag.embed_question`).
-5. Index documents into OpenSearch with body `{ "text", "source", "embedding" }`.
+2. Extract per-page text with PyPDF (1-based `page_number`).
+3. Clean extracted text (normalize whitespace, drop nulls/form-feeds, light hyphenation fix).
+4. Split into paragraph/section-aware chunks sized by **whitespace word tokens** (not character windows), with small token overlap. Page boundaries and section changes are hard breaks; packing prefers whole paragraphs under the token budget and only splits oversized paragraphs on sentences/words.
+5. Embed each chunk with Amazon Titan Embeddings (`amazon.titan-embed-text-v2:0` by default, same as `services.rag.embed_question`).
+6. Ensure OpenSearch mappings for ingest metadata (`put_mapping` for missing keyword/integer fields; fail clearly on type conflicts).
+7. Delete any existing docs for the same deterministic `document_id` **and** legacy docs for the same filename that lack `document_id` (old `_id={filename}::{i}`), via search→delete with refresh between pages, then re-index (idempotent re-upload; empty extracts still delete then return 0).
+8. Index each chunk with OpenSearch `id=chunk_id` and body including `text`, `source`, `embedding`, plus metadata fields below.
+9. Verify an **exact** document count for that `document_id`.
 
-| Setting | Provisional default | Notes |
+| Setting | Default | Notes |
 | --- | --- | --- |
 | OpenSearch index | `medrep-index` | Override with `OPENSEARCH_INDEX` |
-| Chunk size | 500 characters | `DEFAULT_CHUNK_SIZE` |
-| Chunk overlap | 50 characters | `DEFAULT_CHUNK_OVERLAP`; must be `< chunk_size` |
+| Chunk size | 400 tokens | `DEFAULT_CHUNK_SIZE`; override with `INGEST_CHUNK_SIZE` or `--chunk-size` |
+| Chunk overlap | 40 tokens | `DEFAULT_CHUNK_OVERLAP`; override with `INGEST_CHUNK_OVERLAP` or `--chunk-overlap`; must be `< chunk_size` |
+| Token unit | whitespace words | stdlib `str.split()`; not tiktoken |
 | Embedding model | `amazon.titan-embed-text-v2:0` | Override with `BEDROCK_EMBEDDING_MODEL_ID` |
-| Document fields | `text`, `source`, `embedding` | `source` is the PDF filename |
+| `document_id` | sha256(S3 key) hex | Stable for the same object key |
+| `chunk_id` | `{document_id}:{index:04d}` | Used as OpenSearch `_id` |
+
+Indexed document fields:
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `text` | text | yes | Chunk text |
+| `source` | keyword (or text+keyword) | yes | PDF filename; kept for RAG / `POST /chat` |
+| `embedding` | knn_vector | yes | Titan embedding |
+| `document_id` | keyword | yes | Deterministic hash of S3 key |
+| `chunk_id` | keyword | yes | Deterministic per-chunk id |
+| `product_name` | keyword | yes | First path segment when present (`ozempic/...`); else filename stem |
+| `document_type` | keyword | yes | `pdf` |
+| `source_filename` | keyword | yes | Same as `source` |
+| `s3_key` | keyword | yes | Full object key |
+| `page_number` | integer | yes | 1-based start page for the chunk |
+| `section_name` | keyword | no | Best-effort heading heuristic |
+| `document_version` | keyword | no | Best-effort from early pages |
+| `effective_date` | keyword | no | Best-effort from early pages |
 
 Reusable entry point: `ingest_pdf(bucket, key, …)` (CLI, Lambda, and tests).
 
@@ -150,6 +174,7 @@ CLI (demo PDF):
 cd backend
 python ingest.py --bucket <bucket> --key Demo-pain-relief.pdf
 # or: python -m services.ingest --bucket <bucket> --key Demo-pain-relief.pdf
+# Ozempic (operator): --key ozempic/<Ozempic-pdf-filename>.pdf
 ```
 
 #### S3 → Lambda ingestion
@@ -206,17 +231,18 @@ Its responsibility is to:
 4. Generate an answer using the question and retrieved context.
 5. Return the answer with source information.
 
-Provisional RAG ingestion settings (issue #8; may be tuned later):
+RAG ingestion settings (issue #12):
 
-- Document chunking strategy: fixed-size overlapping character chunks
-- Chunk size: 500 characters
-- Chunk overlap: 50 characters
+- Document chunking strategy: page-aware, paragraph/section-aware packing under a whitespace-token budget (section and page hard breaks; oversized paragraphs split on sentences/words), with small token overlap
+- Chunk size: 400 tokens (`INGEST_CHUNK_SIZE` / `--chunk-size`)
+- Chunk overlap: 40 tokens (`INGEST_CHUNK_OVERLAP` / `--chunk-overlap`)
 - Embedding model: `amazon.titan-embed-text-v2:0` (override with `BEDROCK_EMBEDDING_MODEL_ID`)
 - Retrieval top-k value: **TBD** (runtime default via `RAG_TOP_K`, currently 3)
 - Relevance threshold: **TBD**
 - Behavior when retrieval quality is too low: controlled empty-source response from `ask_rag`
 
 The RAG layer should avoid making these settings part of unrelated API logic.
+Retrieving still uses `text` / `source` / `embedding`; extra ingest metadata does not change `POST /chat`.
 
 ## Retrieval
 
@@ -229,7 +255,9 @@ The retrieved content will then be provided to the answer-generation step.
 Current OpenSearch document shape for ingestion/retrieval:
 
 - Index name: `medrep-index` (default; override with `OPENSEARCH_INDEX`)
-- Fields: `text` (chunk text), `source` (PDF filename), `embedding` (vector)
+- Retrieval fields (unchanged for RAG): `text` (chunk text), `source` (PDF filename), `embedding` (vector)
+- Ingest metadata fields: `document_id`, `chunk_id`, `product_name`, `document_type`, `source_filename`, `s3_key`, `page_number`, optional `section_name` / `document_version` / `effective_date`
+- Idempotency: delete by `document_id` plus legacy same-filename docs without `document_id` (search→delete with refresh), then re-index with `_id=chunk_id`; empty re-upload still deletes; verify exact count
 - Vector / k-NN index mapping details beyond this field set: **TBD**
 - Retrieval top-k: env `RAG_TOP_K` (default 3); relevance threshold: **TBD**
 
@@ -320,7 +348,7 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - Package layout under `backend/`: `api/schema`, `services`, `repositories`, `models`, `utils`, `handlers`, `tests`.
 - `POST /chat` accepts `{ "question": "..." }`, calls `ask_rag(question)`, and returns `{ "answer", "source" }`.
 - `ask_rag(question)` in `backend/services/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source}`.
-- `backend/services/ingest.py` ingests S3 PDFs into OpenSearch `medrep-index` (PyPDF extract → chunk → Titan embed → index `{text, source, embedding}`).
+- `backend/services/ingest.py` ingests S3 PDFs into OpenSearch `medrep-index` (page extract → clean → token chunk → Titan embed → idempotent index with metadata; `source` kept for RAG).
 - S3 ObjectCreated Lambda handler `backend/handlers/s3_ingest.py` calls the shared ingest service.
 - SAM template `infra/template.yaml` packages a thin `handlers`-only function zip plus an ingest layer (`python/services`, `python/repositories`, deps) via the repo-root Makefile; source of truth remains under `backend/`. IAM, env vars, and `.pdf` ObjectCreated trigger are unchanged (deploy is an operator step).
 
@@ -332,7 +360,7 @@ The full TDD workflow is defined separately and should not be duplicated in this
 ### TBD
 
 - Final Bedrock generation model and prompt design (code default exists).
-- Whether provisional chunk size/overlap should change after evaluation.
+- Whether 400/40 token chunk size/overlap should change after offline evaluation.
 - Retrieval top-k tuning and relevance threshold.
 - Generation settings (temperature, max tokens).
 - Authentication implementation.
@@ -344,7 +372,7 @@ The full TDD workflow is defined separately and should not be duplicated in this
 
 ## Open Technical Questions
 
-- Should the provisional chunk size (500) / overlap (50) be changed after evaluating `Demo-pain-relief.pdf` retrieval quality?
+- Should the token chunk size (400) / overlap (40) be changed after evaluating Ozempic (and other) retrieval quality?
 - What retrieval top-k value should be used in production?
 - What relevance threshold should be used?
 - How should the system behave when retrieval finds no sufficiently relevant content beyond the current empty-source response?
