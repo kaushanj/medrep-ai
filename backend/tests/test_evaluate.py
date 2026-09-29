@@ -117,6 +117,79 @@ def test_load_cases_reads_real_cases_json():
     assert "allow_unsupported_claims" in first
 
 
+def test_load_cases_rejects_invalid_json(tmp_path):
+    path = tmp_path / "cases.json"
+    path.write_text("{ not valid json", encoding="utf-8")
+
+    try:
+        load_cases(path)
+        raise AssertionError("expected ValueError")
+    except ValueError as exc:
+        assert "invalid JSON" in str(exc).lower() or "json" in str(exc).lower()
+
+
+def test_load_cases_rejects_missing_cases_key(tmp_path):
+    path = tmp_path / "cases.json"
+    path.write_text('{"other": []}', encoding="utf-8")
+
+    try:
+        load_cases(path)
+        raise AssertionError("expected ValueError")
+    except ValueError as exc:
+        msg = str(exc).lower()
+        assert "cases" in msg
+        assert "missing" in msg
+
+
+def test_load_cases_rejects_cases_not_list(tmp_path):
+    path = tmp_path / "cases.json"
+    path.write_text('{"cases": {"id": "x"}}', encoding="utf-8")
+
+    try:
+        load_cases(path)
+        raise AssertionError("expected ValueError")
+    except ValueError as exc:
+        msg = str(exc).lower()
+        assert "cases" in msg
+        assert "list" in msg
+
+
+def test_load_cases_rejects_missing_required_fields(tmp_path):
+    path = tmp_path / "cases.json"
+    path.write_text(
+        '{"cases": [{"id": "incomplete", "question": "What?"}]}',
+        encoding="utf-8",
+    )
+
+    try:
+        load_cases(path)
+        raise AssertionError("expected ValueError")
+    except ValueError as exc:
+        msg = str(exc).lower()
+        assert "expected_source" in msg or "required" in msg or "missing" in msg
+
+
+def test_load_cases_rejects_expected_facts_not_list(tmp_path):
+    path = tmp_path / "cases.json"
+    path.write_text(
+        '{"cases": [{'
+        '"id": "bad-facts",'
+        '"question": "What?",'
+        '"expected_source": "ozempic.pdf",'
+        '"expected_facts": "semaglutide"'
+        "}]}",
+        encoding="utf-8",
+    )
+
+    try:
+        load_cases(path)
+        raise AssertionError("expected ValueError")
+    except ValueError as exc:
+        msg = str(exc).lower()
+        assert "expected_facts" in msg
+        assert "list" in msg
+
+
 def test_check_source_match():
     result = check_source("ozempic.pdf", "ozempic.pdf")
 
@@ -405,6 +478,38 @@ def test_evaluate_case_fails_on_source_mismatch():
 
     assert result["passed"] is False
     assert result["source_check"]["passed"] is False
+
+
+def test_evaluate_case_fails_solely_on_missing_expected_facts():
+    case = {
+        "id": "missing-facts-only",
+        "product": "ozempic",
+        "question": "What is the active ingredient in Ozempic?",
+        "expected_source": "ozempic.pdf",
+        "expected_facts": ["semaglutide"],
+        "allow_unsupported_claims": False,
+    }
+
+    def mock_ask(_question):
+        return {
+            "answer": "Ozempic is a medicine for diabetes.",
+            "source": "ozempic.pdf",
+            "context": "Ozempic contains semaglutide.",
+        }
+
+    result = evaluate_case(
+        case, ask_fn=mock_ask, metrics_fn=_passing_metrics
+    )
+
+    assert result["source_check"]["passed"] is True
+    assert result["facts_check"]["passed"] is False
+    assert result["grounding"]["passed"] is True
+    assert result["metrics"]["faithfulness"]["passed"] is True
+    assert result["passed"] is False
+    assert any(
+        "missing expected facts" in reason for reason in result["failure_reasons"]
+    )
+    assert result["facts_check"]["missing_facts"] == ["semaglutide"]
 
 
 def test_main_loads_backend_dotenv_before_run(monkeypatch):
