@@ -1,4 +1,4 @@
-"""Deterministic RAG evaluator against the golden dataset (issue #16)."""
+"""Deterministic RAG evaluator against the golden dataset (issues #16, #17)."""
 
 from __future__ import annotations
 
@@ -7,9 +7,23 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
+from dotenv import load_dotenv
+
 from services.rag import ask_rag
 
 DEFAULT_CASES_PATH = Path(__file__).resolve().parent / "cases.json"
+BACKEND_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+CONTROLLED_EMPTY_ANSWER = "No relevant documents found."
+
+
+def _default_metrics_fn(
+    question: str, answer: str, context: str, **kwargs: Any
+) -> dict[str, dict[str, Any]]:
+    """Lazy import so main-deps unit tests collect without deepeval installed."""
+    from eval.metrics import run_deepeval_metrics
+
+    return run_deepeval_metrics(question, answer, context, **kwargs)
+
 
 
 def load_cases(path: str | Path | None = None) -> list[dict[str, Any]]:
@@ -44,10 +58,34 @@ def check_expected_facts(
     }
 
 
+def _answer_makes_claims(answer: str) -> bool:
+    text = (answer or "").strip()
+    if not text or text == CONTROLLED_EMPTY_ANSWER:
+        return False
+    return True
+
+
+def _skipped_metrics(reason: str) -> dict[str, dict[str, Any]]:
+    skipped = {
+        "score": None,
+        "passed": None,
+        "is_successful": None,
+        "skipped": True,
+        "reason": reason,
+    }
+    return {
+        "faithfulness": dict(skipped),
+        "answer_relevancy": dict(skipped),
+        "contextual_relevancy": dict(skipped),
+    }
+
+
 def evaluate_case(
     case: dict[str, Any],
     ask_fn: Callable[[str], dict[str, str]] = ask_rag,
+    metrics_fn: Callable[..., dict[str, dict[str, Any]]] = _default_metrics_fn,
 ) -> dict[str, Any]:
+
     rag = ask_fn(case["question"])
     answer = rag.get("answer", "")
     source = rag.get("source", "")
@@ -56,21 +94,68 @@ def evaluate_case(
     source_check = check_source(source, case["expected_source"])
     facts_check = check_expected_facts(answer, case.get("expected_facts") or [])
 
+    context_usable = bool((context or "").strip())
+    if context_usable:
+        metrics = metrics_fn(case["question"], answer, context)
+    else:
+        metrics = _skipped_metrics(
+            "empty retrieval context; DeepEval metrics skipped"
+        )
+
+    allow_unsupported = case.get("allow_unsupported_claims") is not False
     grounding: dict[str, Any]
-    if case.get("allow_unsupported_claims") is False:
-        grounding = {
-            "status": "deferred",
-            "reason": "grounding check deferred to DeepEval (issue #17)",
-        }
+    if not allow_unsupported:
+        if not context_usable:
+            if _answer_makes_claims(answer):
+                grounding = {
+                    "status": "failed",
+                    "passed": False,
+                    "score": None,
+                    "reason": (
+                        "empty retrieval context; cannot verify grounding "
+                        "of answer claims"
+                    ),
+                }
+            else:
+                grounding = {
+                    "status": "skipped",
+                    "passed": True,
+                    "score": None,
+                    "reason": (
+                        "empty retrieval context; no answer claims to ground"
+                    ),
+                }
+        else:
+            faith = metrics.get("faithfulness") or {}
+            grounding = {
+                "status": "evaluated",
+                "passed": bool(faith.get("passed")),
+                "score": faith.get("score"),
+                "reason": faith.get("reason") or "",
+            }
     else:
         grounding = {"status": "skipped", "reason": ""}
 
     passed = source_check["passed"] and facts_check["passed"]
-    failure_reasons = []
+    failure_reasons: list[str] = []
     if not source_check["passed"]:
         failure_reasons.append(source_check["reason"])
     if not facts_check["passed"]:
         failure_reasons.append(facts_check["reason"])
+
+    if not allow_unsupported and grounding.get("passed") is False:
+        passed = False
+        reason = grounding.get("reason") or "faithfulness/grounding failed"
+        failure_reasons.append(f"grounding: {reason}")
+
+    for metric_name in ("answer_relevancy", "contextual_relevancy"):
+        metric = metrics.get(metric_name) or {}
+        if metric.get("skipped"):
+            continue
+        if not metric.get("passed"):
+            passed = False
+            reason = metric.get("reason") or f"{metric_name} failed"
+            failure_reasons.append(f"{metric_name}: {reason}")
 
     return {
         "id": case["id"],
@@ -81,6 +166,7 @@ def evaluate_case(
         "source_check": source_check,
         "facts_check": facts_check,
         "grounding": grounding,
+        "metrics": metrics,
         "failure_reasons": failure_reasons,
     }
 
@@ -94,20 +180,44 @@ def format_case_result(result: dict[str, Any]) -> str:
         f"  Source check: {source_status}",
         f"  Expected facts: {facts_status}",
     ]
+
+    metrics = result.get("metrics") or {}
+    for key, label in (
+        ("faithfulness", "Faithfulness"),
+        ("answer_relevancy", "Answer relevancy"),
+        ("contextual_relevancy", "Contextual relevancy"),
+    ):
+        metric = metrics.get(key) or {}
+        if metric.get("skipped"):
+            lines.append(f"  {label}: SKIPPED ({metric.get('reason', '')})")
+            continue
+        status = "PASS" if metric.get("passed") else "FAIL"
+        score = metric.get("score")
+        score_text = f" score={score}" if score is not None else ""
+        lines.append(f"  {label}: {status}{score_text}")
+
+    grounding = result.get("grounding") or {}
+    if grounding.get("status") == "evaluated":
+        g_status = "PASS" if grounding.get("passed") else "FAIL"
+        lines.append(f"  Grounding: {g_status}")
+    elif grounding.get("status") == "failed":
+        lines.append(f"  Grounding: FAIL ({grounding.get('reason', '')})")
+
     for reason in result.get("failure_reasons") or []:
         lines.append(f"  Failure: {reason}")
-    grounding = result.get("grounding") or {}
-    if grounding.get("status") == "deferred":
-        lines.append(f"  Grounding: deferred ({grounding.get('reason', '')})")
     return "\n".join(lines)
 
 
 def run(
     path: str | Path | None = None,
     ask_fn: Callable[[str], dict[str, str]] = ask_rag,
+    metrics_fn: Callable[..., dict[str, dict[str, Any]]] = _default_metrics_fn,
 ) -> int:
     cases = load_cases(path)
-    results = [evaluate_case(case, ask_fn=ask_fn) for case in cases]
+    results = [
+        evaluate_case(case, ask_fn=ask_fn, metrics_fn=metrics_fn)
+        for case in cases
+    ]
     passed_count = sum(1 for r in results if r["passed"])
     failed_count = len(results) - passed_count
 
@@ -120,6 +230,7 @@ def run(
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv(BACKEND_ENV_PATH)
     argv = list(sys.argv[1:] if argv is None else argv)
     path = argv[0] if argv else None
     return run(path=path)

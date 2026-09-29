@@ -98,7 +98,7 @@ The OpenSearch client lives in `backend/repositories/opensearch.py` and is share
 
 Configuration uses environment variables (for example `AWS_REGION`, `BEDROCK_EMBEDDING_MODEL_ID`, `BEDROCK_GENERATION_MODEL_ID`, `OPENSEARCH_HOST`, `OPENSEARCH_INDEX`, `RAG_TOP_K`). Secrets are not hardcoded.
 
-`POST /chat` calls `ask_rag(question)` and returns only `{ "answer", "source" }` to clients (`context` is for offline eval reuse).
+`POST /chat` calls `ask_rag(question)` and returns only `{ "answer", "source" }` to clients (`context` is for offline eval reuse). Offline RAG evaluation (`backend/eval/`) runs deterministic source/facts checks plus DeepEval Faithfulness, Answer Relevancy, and Contextual Relevancy against one `ask_rag` result per golden case (Bedrock judge via existing AWS credentials; `backend/requirements-eval.txt`).
 
 ### POST /chat contract
 
@@ -272,7 +272,7 @@ The generation step will receive:
 
 It will use this information to produce the answer returned by MedRep AI.
 
-The generation model default in code is `amazon.nova-lite-v1:0` (`BEDROCK_GENERATION_MODEL_ID`); further prompt/tuning choices remain open.
+The generation model default in code is `amazon.nova-lite-v1:0` (`DEFAULT_GENERATION_MODEL_ID` in `backend/utils/constants.py`, override with `BEDROCK_GENERATION_MODEL_ID`); further prompt/tuning choices remain open.
 
 Other generation settings are also **TBD**, including:
 
