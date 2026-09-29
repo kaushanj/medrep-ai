@@ -1,17 +1,17 @@
 from unittest.mock import patch
 
-import rag
+from services import rag
 
 
 def test_ask_rag_returns_answer_and_source():
     with (
-        patch("rag.embed_question", return_value=[0.1, 0.2]) as mock_embed,
+        patch("services.rag.embed_question", return_value=[0.1, 0.2]) as mock_embed,
         patch(
-            "rag.search_opensearch",
+            "services.rag.search_opensearch",
             return_value=[{"text": "Panadol is for pain.", "source": "panadol.pdf"}],
         ) as mock_search,
         patch(
-            "rag.generate_answer",
+            "services.rag.generate_answer",
             return_value="Panadol is used for pain relief.",
         ) as mock_generate,
     ):
@@ -45,9 +45,9 @@ def test_ask_rag_pipeline_order():
         return "generated answer"
 
     with (
-        patch("rag.embed_question", side_effect=embed),
-        patch("rag.search_opensearch", side_effect=search),
-        patch("rag.generate_answer", side_effect=generate),
+        patch("services.rag.embed_question", side_effect=embed),
+        patch("services.rag.search_opensearch", side_effect=search),
+        patch("services.rag.generate_answer", side_effect=generate),
     ):
         rag.ask_rag("question")
 
@@ -56,9 +56,9 @@ def test_ask_rag_pipeline_order():
 
 def test_ask_rag_empty_retrieval_returns_controlled_response():
     with (
-        patch("rag.embed_question", return_value=[0.1]),
-        patch("rag.search_opensearch", return_value=[]),
-        patch("rag.generate_answer") as mock_generate,
+        patch("services.rag.embed_question", return_value=[0.1]),
+        patch("services.rag.search_opensearch", return_value=[]),
+        patch("services.rag.generate_answer") as mock_generate,
     ):
         result = rag.ask_rag("Unknown product?")
 

@@ -1,0 +1,19 @@
+# Exclude local/dev artifacts from `sam build` package (CodeUri = backend/).
+.venv/
+venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.env.*
+!.env.example
+tests/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+.DS_Store
+AGENTS.md
+CLAUDE.md
