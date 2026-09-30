@@ -13,7 +13,7 @@
       "product": "ozempic",
       "question": "How is Ozempic administered?",
       "expected_source": "ozempic-epar-product-information_en.pdf",
-      "expected_facts": ["Ozempic"],
+      "expected_facts": ["subcutaneous"],
       "allow_unsupported_claims": false
     },
     {
@@ -21,7 +21,7 @@
       "product": "ozempic",
       "question": "What is Ozempic used for?",
       "expected_source": "ozempic-epar-product-information_en.pdf",
-      "expected_facts": ["Ozempic"],
+      "expected_facts": ["type 2 diabetes"],
       "allow_unsupported_claims": false
     },
     {
@@ -29,7 +29,7 @@
       "product": "humira",
       "question": "What is the active ingredient in Humira?",
       "expected_source": "humira-epar-product-information_en.pdf",
-      "expected_facts": ["Humira"],
+      "expected_facts": ["adalimumab"],
       "allow_unsupported_claims": false
     },
     {
@@ -37,7 +37,7 @@
       "product": "humira",
       "question": "How is Humira administered?",
       "expected_source": "humira-epar-product-information_en.pdf",
-      "expected_facts": ["Humira"],
+      "expected_facts": ["subcutaneous"],
       "allow_unsupported_claims": false
     },
     {
@@ -45,7 +45,7 @@
       "product": "humira",
       "question": "What is Humira used for?",
       "expected_source": "humira-epar-product-information_en.pdf",
-      "expected_facts": ["Humira"],
+      "expected_facts": ["rheumatoid arthritis"],
       "allow_unsupported_claims": false
     },
     {

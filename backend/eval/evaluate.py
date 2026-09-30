@@ -26,7 +26,13 @@ def _default_metrics_fn(
 
 
 
-_REQUIRED_CASE_FIELDS = ("id", "question", "expected_source", "expected_facts")
+_REQUIRED_CASE_FIELDS = (
+    "id",
+    "question",
+    "expected_source",
+    "expected_facts",
+    "allow_unsupported_claims",
+)
 
 
 def load_cases(path: str | Path | None = None) -> list[dict[str, Any]]:
