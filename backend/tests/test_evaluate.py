@@ -116,6 +116,29 @@ def test_load_cases_reads_real_cases_json():
     assert "expected_facts" in first
     assert "allow_unsupported_claims" in first
 
+    by_id = {case["id"]: case for case in cases}
+
+    humira_active = by_id["humira-active-ingredient"]["expected_facts"]
+    assert any("adalimumab" in fact.lower() for fact in humira_active)
+
+    for admin_id in ("ozempic-administration", "humira-administration"):
+        facts = by_id[admin_id]["expected_facts"]
+        assert any("subcutaneous" in fact.lower() for fact in facts)
+
+    brand_tokens = {"ozempic", "humira"}
+    for indication_id, brand in (
+        ("ozempic-indication", "ozempic"),
+        ("humira-indication", "humira"),
+    ):
+        facts = by_id[indication_id]["expected_facts"]
+        assert facts, f"{indication_id} must have expected facts"
+        assert not all(
+            fact.strip().lower() == brand for fact in facts
+        ), f"{indication_id} must check medical content, not solely brand"
+        assert any(
+            fact.strip().lower() not in brand_tokens for fact in facts
+        ), f"{indication_id} must include non-brand medical content"
+
 
 def test_load_cases_rejects_invalid_json(tmp_path):
     path = tmp_path / "cases.json"
@@ -169,6 +192,27 @@ def test_load_cases_rejects_missing_required_fields(tmp_path):
         assert "expected_source" in msg or "required" in msg or "missing" in msg
 
 
+def test_load_cases_rejects_missing_allow_unsupported_claims(tmp_path):
+    path = tmp_path / "cases.json"
+    path.write_text(
+        '{"cases": [{'
+        '"id": "missing-allow",'
+        '"question": "What?",'
+        '"expected_source": "ozempic.pdf",'
+        '"expected_facts": ["semaglutide"]'
+        "}]}",
+        encoding="utf-8",
+    )
+
+    try:
+        load_cases(path)
+        raise AssertionError("expected ValueError")
+    except ValueError as exc:
+        msg = str(exc).lower()
+        assert "allow_unsupported_claims" in msg
+        assert "missing" in msg or "required" in msg
+
+
 def test_load_cases_rejects_expected_facts_not_list(tmp_path):
     path = tmp_path / "cases.json"
     path.write_text(
@@ -176,7 +220,8 @@ def test_load_cases_rejects_expected_facts_not_list(tmp_path):
         '"id": "bad-facts",'
         '"question": "What?",'
         '"expected_source": "ozempic.pdf",'
-        '"expected_facts": "semaglutide"'
+        '"expected_facts": "semaglutide",'
+        '"allow_unsupported_claims": false'
         "}]}",
         encoding="utf-8",
     )
