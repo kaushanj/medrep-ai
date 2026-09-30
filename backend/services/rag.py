@@ -86,6 +86,18 @@ def generate_answer(question: str, context: str) -> str:
     return "".join(texts).strip()
 
 
+def _dedupe_chunks(results: list[dict[str, str]]) -> list[dict[str, str]]:
+    seen_texts: set[str] = set()
+    unique: list[dict[str, str]] = []
+    for chunk in results:
+        text = chunk.get("text", "")
+        if text in seen_texts:
+            continue
+        seen_texts.add(text)
+        unique.append(chunk)
+    return unique
+
+
 def ask_rag(question: str) -> dict[str, str]:
     embedding = embed_question(question)
     results = search_opensearch(embedding)
@@ -96,10 +108,23 @@ def ask_rag(question: str) -> dict[str, str]:
             "context": "",
         }
 
-    top = results[0]
-    answer = generate_answer(question, top["text"])
+    chunks = _dedupe_chunks(results)
+    context_parts = [c["text"] for c in chunks if c.get("text")]
+    context = "\n\n".join(context_parts)
+
+    sources: list[str] = []
+    seen_sources: set[str] = set()
+    for chunk in chunks:
+        source = chunk.get("source", "")
+        if not source or source in seen_sources:
+            continue
+        seen_sources.add(source)
+        sources.append(source)
+    source = ", ".join(sources)
+
+    answer = generate_answer(question, context)
     return {
         "answer": answer,
-        "source": top["source"],
-        "context": top["text"],
+        "source": source,
+        "context": context,
     }
