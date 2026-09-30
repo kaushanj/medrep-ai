@@ -5,6 +5,7 @@ import threading
 
 import boto3
 
+from botocore.config import Config
 from utils.constants import DEFAULT_GENERATION_MODEL_ID
 from repositories.opensearch import opensearch_client
 
@@ -49,9 +50,18 @@ def _bedrock_runtime():
             return _bedrock_runtime_client
 
         region = os.environ.get("AWS_REGION", "us-east-1")
+        config = Config(
+            connect_timeout=5,
+            read_timeout=60,
+            retries={
+                "total_max_attempts": 3,
+                "mode": "standard",
+            },
+        )
         _bedrock_runtime_client = boto3.client(
             "bedrock-runtime",
             region_name=region,
+            config=config,
         )
         return _bedrock_runtime_client
 
