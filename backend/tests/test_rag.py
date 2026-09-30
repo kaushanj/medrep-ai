@@ -3,6 +3,25 @@ from unittest.mock import MagicMock, patch
 from services import rag
 
 
+def _reset_bedrock_runtime_cache():
+    rag._bedrock_runtime_client = None
+
+
+def test_bedrock_runtime_reuses_same_client():
+    _reset_bedrock_runtime_cache()
+    fake_client = MagicMock(name="bedrock-runtime")
+
+    with patch("services.rag.boto3.client", return_value=fake_client) as mock_client:
+        first = rag._bedrock_runtime()
+        second = rag._bedrock_runtime()
+
+    assert first is second
+    assert first is fake_client
+    mock_client.assert_called_once()
+    assert mock_client.call_args.args[0] == "bedrock-runtime"
+    _reset_bedrock_runtime_cache()
+
+
 def test_ask_rag_returns_answer_and_source():
     with (
         patch("services.rag.embed_question", return_value=[0.1, 0.2]) as mock_embed,
