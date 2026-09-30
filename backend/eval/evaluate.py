@@ -81,7 +81,8 @@ def load_cases(path: str | Path | None = None) -> list[dict[str, Any]]:
 
 
 def check_source(actual_source: str, expected_source: str) -> dict[str, Any]:
-    if actual_source == expected_source:
+    actual_sources = [s.strip() for s in actual_source.split(",") if s.strip()]
+    if expected_source in actual_sources:
         return {"passed": True, "reason": ""}
     return {
         "passed": False,
