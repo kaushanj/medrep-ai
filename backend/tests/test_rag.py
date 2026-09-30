@@ -69,3 +69,58 @@ def test_ask_rag_empty_retrieval_returns_controlled_response():
     assert result["source"] == ""
     assert result["context"] == ""
     mock_generate.assert_not_called()
+
+
+def test_ask_rag_uses_all_retrieved_chunks_as_context():
+    chunks = [
+        {"text": "Panadol is for pain.", "source": "panadol.pdf"},
+        {"text": "Dose is 500mg every 4-6 hours.", "source": "panadol.pdf"},
+        {"text": "Do not exceed 8 tablets in 24 hours.", "source": "safety.pdf"},
+    ]
+    combined = (
+        "Panadol is for pain.\n\n"
+        "Dose is 500mg every 4-6 hours.\n\n"
+        "Do not exceed 8 tablets in 24 hours."
+    )
+
+    with (
+        patch("services.rag.embed_question", return_value=[0.1]),
+        patch("services.rag.search_opensearch", return_value=chunks),
+        patch(
+            "services.rag.generate_answer",
+            return_value="Panadol relieves pain; max 8 tablets/day.",
+        ) as mock_generate,
+    ):
+        result = rag.ask_rag("What is Panadol dosing?")
+
+    assert result == {
+        "answer": "Panadol relieves pain; max 8 tablets/day.",
+        "source": "panadol.pdf, safety.pdf",
+        "context": combined,
+    }
+    mock_generate.assert_called_once_with("What is Panadol dosing?", combined)
+
+
+def test_ask_rag_dedupes_identical_chunk_text():
+    chunks = [
+        {"text": "Same text.", "source": "a.pdf"},
+        {"text": "Same text.", "source": "b.pdf"},
+        {"text": "Other text.", "source": "c.pdf"},
+        {"text": "", "source": "d.pdf"},
+        {"text": "Third text.", "source": ""},
+    ]
+    combined = "Same text.\n\nOther text.\n\nThird text."
+
+    with (
+        patch("services.rag.embed_question", return_value=[0.1]),
+        patch("services.rag.search_opensearch", return_value=chunks),
+        patch(
+            "services.rag.generate_answer",
+            return_value="answer",
+        ) as mock_generate,
+    ):
+        result = rag.ask_rag("question")
+
+    assert result["context"] == combined
+    assert result["source"] == "a.pdf, c.pdf, d.pdf"
+    mock_generate.assert_called_once_with("question", combined)
