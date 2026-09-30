@@ -1,9 +1,11 @@
 import json
 import os
 import textwrap
+import threading
 
 import boto3
 
+from botocore.config import Config
 from utils.constants import DEFAULT_GENERATION_MODEL_ID
 from repositories.opensearch import opensearch_client
 
@@ -34,10 +36,34 @@ SYSTEM_PROMPT = textwrap.dedent(
     """
 ).strip()
 
+_bedrock_runtime_client = None
+_bedrock_runtime_lock = threading.Lock()
+
 
 def _bedrock_runtime():
-    region = os.environ.get("AWS_REGION", "us-east-1")
-    return boto3.client("bedrock-runtime", region_name=region)
+    global _bedrock_runtime_client
+    if _bedrock_runtime_client is not None:
+        return _bedrock_runtime_client
+
+    with _bedrock_runtime_lock:
+        if _bedrock_runtime_client is not None:
+            return _bedrock_runtime_client
+
+        region = os.environ.get("AWS_REGION", "us-east-1")
+        config = Config(
+            connect_timeout=5,
+            read_timeout=60,
+            retries={
+                "total_max_attempts": 3,
+                "mode": "standard",
+            },
+        )
+        _bedrock_runtime_client = boto3.client(
+            "bedrock-runtime",
+            region_name=region,
+            config=config,
+        )
+        return _bedrock_runtime_client
 
 
 def embed_question(question: str) -> list[float]:
@@ -137,17 +163,16 @@ def _dedupe_chunks(results: list[dict[str, str]]) -> list[dict[str, str]]:
 def ask_rag(question: str) -> dict[str, str]:
     embedding = embed_question(question)
     results = search_opensearch(embedding)
+
     if not results:
         return {
             "answer": "No relevant documents found.",
             "source": "",
             "context": "",
         }
-
     chunks = _dedupe_chunks(results)
     context_parts = [c["text"] for c in chunks if c.get("text")]
     context = "\n\n".join(context_parts)
-
     sources: list[str] = []
     seen_sources: set[str] = set()
     for chunk in chunks:
@@ -157,9 +182,7 @@ def ask_rag(question: str) -> dict[str, str]:
         seen_sources.add(source)
         sources.append(source)
     source = ", ".join(sources)
-
     answer, stop_reason = generate_answer(question, context)
-
     if stop_reason == "guardrail_intervened":
         source = None
     return {
