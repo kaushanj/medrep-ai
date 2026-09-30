@@ -92,7 +92,7 @@ Request/response Pydantic models live in `backend/api/schema/`. `backend/main.py
 1. Embeds the question with Amazon Bedrock.
 2. Searches Amazon OpenSearch (k-NN).
 3. Sends retrieved context to Amazon Bedrock for generation.
-4. Returns `{ "answer": "...", "source": "...", "context": "..." }` (singular `source` string; `context` is the top retrieved chunk text, or empty when no hits).
+4. Returns `{ "answer": "...", "source": "...", "context": "..." }` (singular `source` string; `context` is combined top-k chunk text after exact-text dedupe, joined with blank lines; `source` is unique retrieved sources joined into one string; both empty when no hits).
 
 The OpenSearch client lives in `backend/repositories/opensearch.py` and is shared by RAG and ingest.
 
