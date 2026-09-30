@@ -7,6 +7,23 @@ from main import app
 client = TestClient(app)
 
 
+def test_startup_warmup_failure_does_not_break_app():
+    with (
+        patch(
+            "main.opensearch_client",
+            side_effect=RuntimeError("no opensearch"),
+        ),
+        patch(
+            "main._bedrock_runtime",
+            side_effect=RuntimeError("no bedrock"),
+        ),
+    ):
+        with TestClient(app) as warmup_client:
+            response = warmup_client.post("/chat", json={})
+
+    assert response.status_code == 422
+
+
 @patch("main.ask_rag")
 def test_chat_returns_answer_and_source(mock_ask_rag):
     mock_ask_rag.return_value = {
@@ -33,21 +50,10 @@ def test_chat_missing_question_returns_422():
     assert response.status_code == 422
 
 
-@patch("main.ask_rag")
-def test_chat_empty_question_returns_answer(mock_ask_rag):
-    mock_ask_rag.return_value = {
-        "answer": "No relevant documents found.",
-        "source": "",
-    }
-
+def test_chat_empty_question_returns_422():
     response = client.post("/chat", json={"question": ""})
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "answer": "No relevant documents found.",
-        "source": "",
-    }
-    mock_ask_rag.assert_called_once_with("")
+    assert response.status_code == 422
 
 
 def test_chat_full_rag_flow_returns_answer_and_source():

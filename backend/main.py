@@ -1,15 +1,34 @@
 import logging
+from contextlib import asynccontextmanager
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exception_handlers import http_exception_handler
 from api.schema import ChatRequest, ChatResponse
-from services.rag import ask_rag
+from repositories.opensearch import opensearch_client
+from services.rag import _bedrock_runtime, ask_rag
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        opensearch_client()
+    except Exception:
+        logger.warning("OpenSearch client warmup failed.", exc_info=True)
+
+    try:
+        _bedrock_runtime()
+    except Exception:
+        logger.warning("Bedrock runtime client warmup failed.", exc_info=True)
+
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/chat", response_model=ChatResponse)
