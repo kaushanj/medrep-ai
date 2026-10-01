@@ -50,9 +50,9 @@ Open [http://localhost:3000](http://localhost:3000). Unauthenticated users see t
 
 The UI calls `POST /chat` on the configured API base URL with `Authorization: Bearer <Google ID token>`. Start the FastAPI backend separately before asking questions. Backend verification of that token is #34.
 
-## CORS limitation
+## CORS
 
-Browser requests from the Next.js origin (e.g. `http://localhost:3000`) to the backend may be blocked by CORS until the backend is configured to allow the frontend origin. This frontend does not work around CORS. If requests fail in the browser for that reason, configure CORS on the backend in a separate change.
+The backend must allow this app’s origin via `CORS_ALLOWED_ORIGINS` (see `backend/.env.example`). For local Next.js, set `CORS_ALLOWED_ORIGINS=http://localhost:3000` in `backend/.env` and restart FastAPI. This frontend does not work around CORS.
 
 ## Scripts
 
