@@ -54,7 +54,7 @@ def test_allowed_origin_preflight_includes_authorization(monkeypatch):
         headers={
             "Origin": ALLOWED_ORIGIN,
             "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "authorization,content-type",
+            "Access-Control-Request-Headers": "authorization,content-type,x-request-id",
         },
     )
 
@@ -63,6 +63,42 @@ def test_allowed_origin_preflight_includes_authorization(monkeypatch):
     allow_headers = response.headers.get("access-control-allow-headers", "").lower()
     assert "authorization" in allow_headers
     assert "content-type" in allow_headers
+    assert "x-request-id" in allow_headers
+    allow_methods = response.headers.get("access-control-allow-methods", "").upper()
+    assert "POST" in allow_methods
+    assert "GET" in allow_methods
+
+
+def test_allowed_origin_exposes_request_id_on_response(monkeypatch):
+    client = TestClient(_app_with_cors(monkeypatch, ALLOWED_ORIGIN))
+
+    response = client.post(
+        "/chat",
+        json={"question": "What is Panadol used for?"},
+        headers={"Origin": ALLOWED_ORIGIN},
+    )
+
+    assert response.headers.get("access-control-allow-origin") == ALLOWED_ORIGIN
+    expose = response.headers.get("access-control-expose-headers", "").lower()
+    assert "x-request-id" in expose
+
+
+def test_allowed_origin_get_preflight(monkeypatch):
+    client = TestClient(_app_with_cors(monkeypatch, ALLOWED_ORIGIN))
+
+    response = client.options(
+        "/health",
+        headers={
+            "Origin": ALLOWED_ORIGIN,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "x-request-id",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == ALLOWED_ORIGIN
+    allow_methods = response.headers.get("access-control-allow-methods", "").upper()
+    assert "GET" in allow_methods
 
 
 def test_allowed_origin_post_includes_allow_origin(monkeypatch):
