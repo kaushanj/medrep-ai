@@ -42,6 +42,10 @@ SYSTEM_PROMPT = textwrap.dedent(
     """
 ).strip()
 
+NOT_FOUND_ANSWER = (
+    "I could not find this information in the provided product documents."
+)
+
 _bedrock_runtime_client = None
 _bedrock_runtime_lock = threading.Lock()
 
@@ -221,6 +225,13 @@ def ask_rag(question: str) -> dict[str, str]:
     answer, stop_reason = generate_answer(question, context)
     if stop_reason == "guardrail_intervened":
         source = None
+
+    if answer.strip() == NOT_FOUND_ANSWER:
+        source = ""
+
+    if stop_reason == "guardrail_intervened":
+        source = None
+
     return {
         "answer": answer,
         "source": source,
