@@ -1,0 +1,228 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --border: #d8dee6;
+  --text: #1f2933;
+  --muted: #6b7280;
+  --accent: #1d4f91;
+  --accent-hover: #163d70;
+  --error-bg: #fef2f2;
+  --error-border: #f5c2c2;
+  --error-text: #991b1b;
+  --radius: 8px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  font-family:
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  line-height: 1.5;
+}
+
+.page {
+  width: min(720px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2.5rem 0 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.page-subtitle {
+  margin: 0;
+  color: var(--muted);
+}
+
+.question-form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.question-label {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.question-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 6rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  color: var(--text);
+  background: #fff;
+}
+
+.question-input:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, white);
+  border-color: var(--accent);
+}
+
+.question-input:disabled {
+  background: #f3f4f6;
+  color: var(--muted);
+}
+
+.question-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.char-count {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.submit-button {
+  appearance: none;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  padding: 0.55rem 1.1rem;
+  cursor: pointer;
+}
+
+.submit-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.submit-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1rem 1.1rem;
+}
+
+.panel-title {
+  margin: 0 0 0.65rem;
+  font-size: 1.05rem;
+}
+
+.answer-text {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.muted {
+  margin: 0;
+  color: var(--muted);
+}
+
+.error-banner {
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: var(--error-text);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+}
+
+.citations-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.citation-item {
+  padding-left: 0.25rem;
+}
+
+.citation-fields {
+  margin: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.citation-field {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.citation-field dt {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.citation-field dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.legacy-source {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.legacy-source-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.legacy-source-text {
+  margin: 0;
+  color: var(--muted);
+  white-space: pre-wrap;
+  font-size: 0.95rem;
+}
+
+@media (max-width: 560px) {
+  .citation-field {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+}
