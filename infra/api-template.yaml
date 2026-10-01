@@ -53,9 +53,12 @@ Resources:
 
   ApiFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      # Makefile build downloads Linux/python3.12 wheels — no local Python 3.12 required.
+      BuildMethod: makefile
     Properties:
       FunctionName: medrep-api
-      CodeUri: ../backend/
+      CodeUri: ..
       Handler: main.handler
       Description: MedRep FastAPI app via Mangum (GET /health, POST /chat)
       Environment:

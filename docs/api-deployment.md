@@ -14,7 +14,8 @@ Template: `infra/api-template.yaml`
 - [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) and AWS CLI configured (`aws login` / credentials)
 - Existing OpenSearch Serverless collection/index (`medrep-index` by default) and Bedrock model access in the target region
 - Google OAuth **Web** Client ID (same audience as frontend `NEXT_PUBLIC_GOOGLE_CLIENT_ID`)
-- Python 3.12 available for `sam build` (or use `--use-container`)
+- AWS SAM CLI (project venv is fine: `backend/.venv/bin/sam`)
+- Local Python 3.12 is **not** required: the API package uses a Makefile build that downloads Linux Python 3.12 wheels
 
 Do not commit `.env` files, AWS keys, Google client secrets, or bearer tokens.
 
@@ -43,11 +44,13 @@ sam validate --template-file infra/api-template.yaml
 
 ## 4. Build
 
+From the repository root (venv SAM is OK on an older Mac):
+
 ```bash
-sam build --template-file infra/api-template.yaml
+backend/.venv/bin/sam build --template-file infra/api-template.yaml
 ```
 
-SAM packages `backend/` (including `requirements.txt`) into `.aws-sam/build/`.
+This runs the repo-root `Makefile` target `build-ApiFunction`, which copies the FastAPI app and installs `backend/requirements-api.txt` as **manylinux / cp312** wheels for Lambda. You do not need to install Python 3.12 on the laptop.
 
 Note: `sam build` writes to the shared `.aws-sam/` directory. Building the API stack overwrites a previous ingest build artifact set (and vice versa). Rebuild the stack you intend to deploy immediately before `sam deploy`.
 

@@ -1,0 +1,16 @@
+# Exclude heavy / irrelevant paths from SAM makefile CopySource (repo-root CodeUri).
+.git/
+.cursor/
+.aws-sam/
+.tools/
+frontend/
+docs/
+**/node_modules/
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/.env
+**/.DS_Store
+backend/tests/
+backend/eval/
+backend/.pytest_cache/
