@@ -4,6 +4,8 @@ pytest
 httpx
 boto3
 opensearch-py
+requests-aws4auth
 python-dotenv
 pypdf
 google-auth
+mangum

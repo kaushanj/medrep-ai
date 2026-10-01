@@ -1,6 +1,7 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from mangum import Mangum
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
@@ -91,3 +92,5 @@ def chat(
         source=result["source"],
         citations=result.get("citations", []),
     )
+
+handler = Mangum(app, lifespan="off")
