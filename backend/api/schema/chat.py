@@ -15,6 +15,18 @@ class ChatRequest(BaseModel):
         return value
 
 
+class Citation(BaseModel):
+    product_name: str | None = None
+    document_type: str | None = None
+    source_filename: str | None = None
+    s3_key: str | None = None
+    page_number: int | None = None
+    section_name: str | None = None
+    document_version: str | None = None
+    effective_date: str | None = None
+
+
 class ChatResponse(BaseModel):
     answer: str
     source: str | None
+    citations: list[Citation] = []
