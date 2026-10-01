@@ -275,9 +275,7 @@ Application-level API failures use a consistent JSON envelope (replacing FastAPI
 | Other `HTTPException` | corresponding status | Mapped stable code (e.g. `NOT_FOUND`) | `HTTPException.detail` when a string |
 | Unhandled exception | 500 | `INTERNAL_ERROR` | `Something went wrong.` (no internal exception text) |
 
-`WWW-Authenticate` and other `HTTPException` response headers are preserved. Pydantic validation still runs; only the client-facing body is wrapped.
-
-**Known frontend conflict:** `frontend/lib/api.ts` currently reads FastAPI-style `body.detail` for error messages. Until the frontend is updated, clients may not surface `error.message` from this envelope.
+`WWW-Authenticate` and other `HTTPException` response headers are preserved. Pydantic validation still runs; only the client-facing body is wrapped. The frontend prefers `error.message` and still accepts legacy `detail` when present.
 
 ### Document ingestion
 

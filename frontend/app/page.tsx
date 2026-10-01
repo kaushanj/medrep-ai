@@ -47,7 +47,7 @@ export default function HomePage() {
       setHasResponse(true);
     } catch (err) {
       if (err instanceof AuthError) {
-        signOut();
+        signOut(err.message);
         return;
       }
       const message =
@@ -58,6 +58,8 @@ export default function HomePage() {
       setLoading(false);
     }
   }
+
+  const canRetry = Boolean(error) && !loading && question.trim().length > 0;
 
   return (
     <main className="page">
@@ -83,11 +85,19 @@ export default function HomePage() {
 
       {error && (
         <div className="error-banner" role="alert">
-          {error}
+          <p className="error-banner-message">{error}</p>
+          <button
+            type="button"
+            className="retry-button"
+            onClick={handleSubmit}
+            disabled={!canRetry}
+          >
+            Retry
+          </button>
         </div>
       )}
 
-      <AnswerPanel answer={answer} loading={loading} />
+      <AnswerPanel answer={answer} loading={loading} hasError={Boolean(error)} />
 
       <CitationsList
         citations={citations}
