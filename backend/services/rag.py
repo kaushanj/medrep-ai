@@ -2,6 +2,8 @@ import json
 import os
 import textwrap
 import threading
+import logging
+import time
 
 import boto3
 
@@ -49,6 +51,9 @@ NOT_FOUND_ANSWER = (
 _bedrock_runtime_client = None
 _bedrock_runtime_lock = threading.Lock()
 
+logger = logging.getLogger(__name__)
+
+
 
 def _bedrock_runtime():
     global _bedrock_runtime_client
@@ -82,6 +87,10 @@ def embed_question(question: str) -> list[float]:
         "amazon.titan-embed-text-v2:0",
     )
     client = _bedrock_runtime()
+    
+    # track embedding time
+    start = time.perf_counter()
+
     response = client.invoke_model(
         modelId=model_id,
         contentType="application/json",
@@ -89,6 +98,17 @@ def embed_question(question: str) -> list[float]:
         body=json.dumps({"inputText": question}),
     )
     payload = json.loads(response["body"].read())
+
+    # log embedding time
+    latency_ms = round((time.perf_counter() - start) * 1000)
+
+    logger.info(
+        "bedrock_embedding model_id=%s input_tokens=%s latency_ms=%s",
+        model_id,
+        payload.get("inputTextTokenCount", 0),
+        latency_ms,
+    )
+
     return payload["embedding"]
 
 
@@ -156,6 +176,21 @@ def generate_answer(question: str, context: str) -> tuple[str, str]:
             "temperature": 0.1,
         },
     )
+    
+    # log usage metrics
+    usage = response.get("usage", {})
+    metrics = response.get("metrics", {})
+
+    logger.info(
+        "bedrock_generation model_id=%s input_tokens=%s "
+        "output_tokens=%s total_tokens=%s latency_ms=%s",
+        model_id,
+        usage.get("inputTokens", 0),
+        usage.get("outputTokens", 0),
+        usage.get("totalTokens", 0),
+        metrics.get("latencyMs", 0),
+    )
+
     output = response.get("output", {}).get("message", {}).get("content", [])
     stop_reason = response.get("stopReason")
     texts = [block.get("text", "") for block in output if "text" in block]
