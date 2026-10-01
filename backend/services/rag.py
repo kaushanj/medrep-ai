@@ -12,6 +12,12 @@ from repositories.opensearch import opensearch_client
 # Re-export for callers/tests that historically imported from rag.
 _opensearch_client = opensearch_client
 
+RAG_MAX_CONTEXT_CHARS = int(
+    os.getenv("RAG_MAX_CONTEXT_CHARS", 12000)
+)
+
+MIN_SCORE = float(os.getenv("MIN_SCORE", 0.56))
+
 SYSTEM_PROMPT = textwrap.dedent(
     """\
     You are MedRep AI, a product-information assistant.
@@ -102,10 +108,12 @@ def search_opensearch(embedding: list[float]) -> list[dict[str, str]]:
     results: list[dict[str, str]] = []
     for hit in hits:
         source = hit.get("_source", {})
+        score = hit.get("_score", 0)
         results.append(
             {
                 "text": source.get("text", ""),
                 "source": source.get("source", ""),
+                "score": score,
             }
         )
     return results
@@ -140,6 +148,10 @@ def generate_answer(question: str, context: str) -> tuple[str, str]:
                 "content": [{"text": prompt}],
             }
         ],
+        inferenceConfig={
+            "maxTokens": 500,
+            "temperature": 0.1,
+        },
     )
     output = response.get("output", {}).get("message", {}).get("content", [])
     stop_reason = response.get("stopReason")
@@ -153,12 +165,32 @@ def _dedupe_chunks(results: list[dict[str, str]]) -> list[dict[str, str]]:
     unique: list[dict[str, str]] = []
     for chunk in results:
         text = chunk.get("text", "")
-        if text in seen_texts:
+        score = chunk.get("score", 0)
+        if text in seen_texts or score < MIN_SCORE:
             continue
         seen_texts.add(text)
         unique.append(chunk)
     return unique
 
+def build_context(chunks: list[str]) -> str:
+    selected_chunks = []
+    current_length = 0
+
+    for chunk in chunks:
+        chunk = chunk.strip()
+
+        if not chunk:
+            continue
+
+        additional_length = len(chunk) + 2
+
+        if current_length + additional_length > RAG_MAX_CONTEXT_CHARS:
+            break
+
+        selected_chunks.append(chunk)
+        current_length += additional_length
+
+    return "\n\n".join(selected_chunks)
 
 def ask_rag(question: str) -> dict[str, str]:
     embedding = embed_question(question)
@@ -172,7 +204,7 @@ def ask_rag(question: str) -> dict[str, str]:
         }
     chunks = _dedupe_chunks(results)
     context_parts = [c["text"] for c in chunks if c.get("text")]
-    context = "\n\n".join(context_parts)
+    context = build_context(context_parts)
     sources: list[str] = []
     seen_sources: set[str] = set()
     for chunk in chunks:
