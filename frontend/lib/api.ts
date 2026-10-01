@@ -10,7 +10,10 @@ function getApiBaseUrl(): string {
   return raw.trim().replace(/\/+$/, "");
 }
 
-/** Stub for future auth (#33/#35). Returns no auth headers yet. */
+/**
+ * Stub auth headers. Issue #35 should attach Bearer via getIdToken() from
+ * `@/lib/auth` (e.g. Authorization: Bearer <token>). Do not hard-code credentials.
+ */
 export function getAuthHeaders(): Record<string, string> {
   return {};
 }

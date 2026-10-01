@@ -51,6 +51,129 @@ body {
   gap: 0.35rem;
 }
 
+.page-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.page-header-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.user-menu {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.user-menu-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.user-menu-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--border);
+}
+
+.user-menu-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.user-menu-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 12rem;
+}
+
+.user-menu-email {
+  font-size: 0.8rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 12rem;
+}
+
+.sign-out-button {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+}
+
+.sign-out-button:hover {
+  background: #f3f4f6;
+}
+
+.sign-in-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+.sign-in-panel {
+  width: min(420px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.sign-in-title {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.sign-in-subtitle {
+  margin: 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+.sign-in-loading {
+  text-align: center;
+}
+
+.google-button-host {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
 .page-title {
   margin: 0;
   font-size: 1.75rem;
@@ -221,6 +344,20 @@ body {
 }
 
 @media (max-width: 560px) {
+  .page-header-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .user-menu {
+    justify-content: space-between;
+  }
+
+  .user-menu-name,
+  .user-menu-email {
+    max-width: none;
+  }
+
   .citation-field {
     grid-template-columns: 1fr;
     gap: 0.15rem;
