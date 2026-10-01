@@ -10,6 +10,8 @@ The current backend API is centered on:
 
 `POST /chat`
 
+`GET /health` (unauthenticated liveness)
+
 As the project grows, the backend will coordinate the RAG flow, document retrieval, and answer generation.
 
 Product behavior is defined in `docs/product/requirements.md`.
@@ -66,7 +68,18 @@ At a high level:
 
 FastAPI provides the backend API layer.
 
-The current endpoint is:
+The current endpoints are:
+
+### GET /health
+
+Purpose:
+
+Lightweight liveness check for the API process.
+
+- Unauthenticated (no Google ID token required).
+- Does **not** call Bedrock, OpenSearch, or other AI dependencies.
+- Response: `{ "status": "ok" }` with HTTP 200.
+- Includes `X-Request-ID` like other endpoints.
 
 ### POST /chat
 
@@ -85,7 +98,17 @@ The endpoint should remain focused on HTTP/API concerns such as:
 
 The route handler should not contain the entire retrieval and answer-generation process as the project becomes larger.
 
-Request/response Pydantic models live in `backend/api/schema/`. Google ID-token verification lives in `backend/api/auth.py` (`require_google_user`). `backend/main.py` loads configuration, creates the FastAPI app, and defines `POST /chat` with that auth dependency.
+Request/response Pydantic models live in `backend/api/schema/`. Google ID-token verification lives in `backend/api/auth.py` (`require_google_user`). Request-ID middleware lives in `backend/api/middleware.py`. Consistent error envelopes and handlers live in `backend/api/errors.py`. `backend/main.py` loads configuration, creates the FastAPI app, registers CORS + request-ID middleware and exception handlers, and defines `GET /health` and `POST /chat`.
+
+### Request ID
+
+Every API response includes an `X-Request-ID` header for log/response correlation.
+
+- Clients may send `X-Request-ID` on the request.
+- The server accepts the value when it is safe: non-empty, at most 128 characters, printable ASCII without whitespace or control characters.
+- Invalid or missing values are replaced with a generated UUID4.
+- The resolved ID is stored on `request.state.request_id`, returned on the response as `X-Request-ID`, and included in error envelopes as `error.request_id`.
+- Unexpected exceptions are logged with `request_id` (and path/method). Authorization tokens and full request bodies are not logged.
 
 ### Authentication (`POST /chat`)
 
@@ -103,16 +126,16 @@ Configuration:
 
 Behavior:
 
-- Missing, malformed, or non-Bearer `Authorization` → **401** (`Not authenticated.`).
-- Invalid, expired, or wrong-audience token → **401** (`Invalid authentication credentials.`).
-- `GOOGLE_CLIENT_ID` unset/empty → **500** (`Authentication is not configured.`) — fail closed.
+- Missing, malformed, or non-Bearer `Authorization` → **401** (`UNAUTHORIZED` / `Not authenticated.`).
+- Invalid, expired, or wrong-audience token → **401** (`UNAUTHORIZED` / `Invalid authentication credentials.`).
+- `GOOGLE_CLIENT_ID` unset/empty → **500** (`INTERNAL_ERROR` / `Authentication is not configured.`) — fail closed.
 - Valid token → request proceeds to RAG; verified claims are available to the route but unused by chat today.
 
 Verification uses `google.oauth2.id_token.verify_oauth2_token` (signature, issuer, audience, expiry). Raw tokens must not be logged. Auth is isolated from `services/rag.py`. Application roles/RBAC are out of scope.
 
 ### CORS
 
-Browser clients (the MedRep Next.js app) call `POST /chat` cross-origin. FastAPI registers `CORSMiddleware` in `backend/main.py` (`add_cors_middleware`).
+Browser clients (the MedRep Next.js app) call `POST /chat` (and may call `GET /health`) cross-origin. FastAPI registers `CORSMiddleware` in `backend/main.py` (`add_cors_middleware`). Request-ID middleware is registered after CORS so it is outermost.
 
 Configuration:
 
@@ -124,8 +147,9 @@ Middleware settings:
 
 - `allow_origins` — parsed from `CORS_ALLOWED_ORIGINS` (no wildcard, no `allow_origin_regex`).
 - `allow_credentials=False`
-- `allow_methods` — `POST`, `OPTIONS`
-- `allow_headers` — `Authorization`, `Content-Type`, `Accept`
+- `allow_methods` — `GET`, `POST`, `OPTIONS`
+- `allow_headers` — `Authorization`, `Content-Type`, `Accept`, `X-Request-ID`
+- `expose_headers` — `X-Request-ID`
 
 Do not hard-code production hostnames; set the env var per environment.
 
@@ -205,7 +229,34 @@ Response:
   - `source` remains a singular string (may be empty or `null` when no documents are found or a guardrail intervenes).
   - `citations` is an array of structured citation objects for chunks actually used in the RAG context. Optional fields may be `null` when metadata is missing. Duplicates are removed deterministically (first-seen wins) by `(s3_key or source_filename or source, page_number, section_name)`. Empty for no-hit, below-threshold, guardrail-blocked, and unsupported-answer responses.
 
-No additional API endpoints are defined at this stage. PDF ingestion is not an HTTP route; it is shared service code invoked by CLI and by an S3-triggered Lambda.
+No additional chat endpoints are defined at this stage. PDF ingestion is not an HTTP route; it is shared service code invoked by CLI and by an S3-triggered Lambda.
+
+### Error response shape
+
+Application-level API failures use a consistent JSON envelope (replacing FastAPI's default `{"detail": ...}` for handled application errors):
+
+```json
+{
+  "error": {
+    "code": "INTERNAL_ERROR",
+    "message": "Something went wrong.",
+    "request_id": "..."
+  }
+}
+```
+
+| Situation | Status | `error.code` | `error.message` |
+| --- | --- | --- | --- |
+| Request/body validation (`RequestValidationError`) | 422 | `VALIDATION_ERROR` | `Request validation failed.` |
+| Missing/invalid auth | 401 | `UNAUTHORIZED` | Client-safe auth strings from `api.auth` |
+| Auth misconfiguration | 500 | `INTERNAL_ERROR` | `Authentication is not configured.` |
+| RAG / AI dependency failure from `POST /chat` | 503 | `SERVICE_UNAVAILABLE` | `The AI service is temporarily unavailable.` |
+| Other `HTTPException` | corresponding status | Mapped stable code (e.g. `NOT_FOUND`) | `HTTPException.detail` when a string |
+| Unhandled exception | 500 | `INTERNAL_ERROR` | `Something went wrong.` (no internal exception text) |
+
+`WWW-Authenticate` and other `HTTPException` response headers are preserved. Pydantic validation still runs; only the client-facing body is wrapped.
+
+**Known frontend conflict:** `frontend/lib/api.ts` currently reads FastAPI-style `body.detail` for error messages. Until the frontend is updated, clients may not surface `error.message` from this envelope.
 
 ### Document ingestion
 
@@ -384,7 +435,7 @@ The backend should avoid exposing unnecessary internal error details to users.
 
 Useful diagnostic information should still be available for development and troubleshooting.
 
-For `POST /chat` authentication: missing/invalid Bearer credentials return **401**; unset `GOOGLE_CLIENT_ID` returns **500**. Other exact HTTP status codes, error schemas, retry behavior, and user-facing error messages remain **TBD** unless defined elsewhere.
+API failures use the `error` envelope described under **Error response shape** (stable `code`, client-safe `message`, `request_id`). Unexpected exceptions are logged with `request_id` and must not include Authorization tokens or full sensitive request bodies in logs. Internal exception details must not appear in 5xx response bodies.
 
 ## Configuration and Secrets
 
@@ -432,8 +483,10 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - FastAPI is the selected backend framework.
 - Package layout under `backend/`: `api/schema`, `services`, `repositories`, `models`, `utils`, `handlers`, `tests`.
 - `POST /chat` accepts `{ "question": "..." }`, requires `Authorization: Bearer <Google ID token>`, calls `ask_rag(question)`, and returns `{ "answer", "source", "citations" }`.
+- `GET /health` returns `{ "status": "ok" }` without auth or AI dependency calls.
+- Every response includes `X-Request-ID` (accept valid incoming or generate UUID4); error bodies use `{ "error": { "code", "message", "request_id" } }`.
 - `backend/api/auth.py` verifies Google ID tokens with `google-auth` against `GOOGLE_CLIENT_ID` (`require_google_user` dependency).
-- CORS via `CORSMiddleware` and `CORS_ALLOWED_ORIGINS` (fail closed; Authorization/Content-Type/Accept; POST/OPTIONS).
+- CORS via `CORSMiddleware` and `CORS_ALLOWED_ORIGINS` (fail closed; Authorization/Content-Type/Accept/X-Request-ID; GET/POST/OPTIONS; expose `X-Request-ID`).
 - `ask_rag(question)` in `backend/services/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source, context, citations}`.
 - `backend/services/ingest.py` ingests S3 PDFs into OpenSearch `medrep-index` (page extract → clean → token chunk → Titan embed → idempotent index with metadata; `source` kept for RAG).
 - S3 ObjectCreated Lambda handler `backend/handlers/s3_ingest.py` calls the shared ingest service.
@@ -451,7 +504,6 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - Retrieval top-k tuning and relevance threshold.
 - Generation settings (temperature, max tokens).
 - Authorization / roles beyond Google ID-token gate.
-- Error response format (beyond auth 401/500 above).
 - Retry behavior.
 - Final configuration approach.
 - Final deployment architecture beyond the ingest SAM template.
