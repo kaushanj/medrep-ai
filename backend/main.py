@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.auth import require_google_user
 from api.errors import register_exception_handlers
 from api.middleware import RequestIdMiddleware
+from api.rate_limit import enforce_chat_rate_limit
 from api.schema import ChatRequest, ChatResponse
 from repositories.opensearch import opensearch_client
 from services.rag import _bedrock_runtime, ask_rag
@@ -74,6 +75,7 @@ def health() -> dict[str, str]:
 def chat(
     request: ChatRequest,
     _user: dict = Depends(require_google_user),
+    _rate_limit: None = Depends(enforce_chat_rate_limit),
 ) -> ChatResponse:
     try:
         result = ask_rag(request.question)

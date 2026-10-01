@@ -45,7 +45,8 @@ flowchart TD
     A[User] --> B[POST /chat]
     B --> C[FastAPI]
     C --> AUTH[Verify Google ID token]
-    AUTH --> D[RAG Service]
+    AUTH --> RL[In-process rate limit]
+    RL --> D[RAG Service]
     D --> E[Retrieval]
     E --> F[Relevant Document Content]
     F --> G[Answer Generation]
@@ -58,11 +59,12 @@ At a high level:
 
 1. The user submits a question to `POST /chat` with `Authorization: Bearer <Google ID token>`.
 2. FastAPI receives the request, verifies the Google ID token (`GOOGLE_CLIENT_ID` audience), and validates the body.
-3. The request is passed to the RAG logic.
-4. Relevant product document content is retrieved.
-5. The question and retrieved context are used for answer generation.
-6. The generated answer is associated with its source information.
-7. FastAPI returns the answer and sources to the caller.
+3. After auth, an in-process sliding-window rate limit is checked (keyed by Google `sub`, or client IP if `sub` is missing).
+4. The request is passed to the RAG logic.
+5. Relevant product document content is retrieved.
+6. The question and retrieved context are used for answer generation.
+7. The generated answer is associated with its source information.
+8. FastAPI returns the answer and sources to the caller.
 
 ## API Layer
 
@@ -91,6 +93,7 @@ The endpoint should remain focused on HTTP/API concerns such as:
 
 - Receiving the request.
 - Authenticating the caller (Google ID token).
+- Applying the chat rate limit.
 - Validating request data.
 - Calling the appropriate application logic.
 - Returning the result.
@@ -98,7 +101,7 @@ The endpoint should remain focused on HTTP/API concerns such as:
 
 The route handler should not contain the entire retrieval and answer-generation process as the project becomes larger.
 
-Request/response Pydantic models live in `backend/api/schema/`. Google ID-token verification lives in `backend/api/auth.py` (`require_google_user`). Request-ID middleware lives in `backend/api/middleware.py`. Consistent error envelopes and handlers live in `backend/api/errors.py`. `backend/main.py` loads configuration, creates the FastAPI app, registers CORS + request-ID middleware and exception handlers, and defines `GET /health` and `POST /chat`.
+Request/response Pydantic models live in `backend/api/schema/`. Google ID-token verification lives in `backend/api/auth.py` (`require_google_user`). In-process chat rate limiting lives in `backend/api/rate_limit.py` (`enforce_chat_rate_limit`). Request-ID middleware lives in `backend/api/middleware.py`. Consistent error envelopes and handlers live in `backend/api/errors.py`. `backend/main.py` loads configuration, creates the FastAPI app, registers CORS + request-ID middleware and exception handlers, and defines `GET /health` and `POST /chat`.
 
 ### Request ID
 
@@ -129,9 +132,26 @@ Behavior:
 - Missing, malformed, or non-Bearer `Authorization` → **401** (`UNAUTHORIZED` / `Not authenticated.`).
 - Invalid, expired, or wrong-audience token → **401** (`UNAUTHORIZED` / `Invalid authentication credentials.`).
 - `GOOGLE_CLIENT_ID` unset/empty → **500** (`INTERNAL_ERROR` / `Authentication is not configured.`) — fail closed.
-- Valid token → request proceeds to RAG; verified claims are available to the route but unused by chat today.
+- Valid token → request proceeds to the chat rate limit (then RAG); verified claims are available to the route but unused by chat beyond rate-limit keying today.
 
 Verification uses `google.oauth2.id_token.verify_oauth2_token` (signature, issuer, audience, expiry). Raw tokens must not be logged. Auth is isolated from `services/rag.py`. Application roles/RBAC are out of scope.
+
+### Rate limiting (`POST /chat`)
+
+`POST /chat` is rate-limited after authentication via an in-memory sliding window in `backend/api/rate_limit.py` (`enforce_chat_rate_limit`). `GET /health` is not rate-limited.
+
+Configuration:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CHAT_RATE_LIMIT_REQUESTS` | `20` | Max allowed requests per key within the window. Invalid or non-positive values fall back to the default. |
+| `CHAT_RATE_LIMIT_WINDOW_SECONDS` | `60` | Sliding window length in seconds. Invalid or non-positive values fall back to the default. |
+
+Behavior:
+
+- Key: `user:{google sub}` when the verified token has a non-empty string `sub`; otherwise `ip:{client_host}` (or `ip:unknown` if no client address).
+- Over limit → **429** (`TOO_MANY_REQUESTS` / `Rate limit exceeded. Try again later.`). RAG is not called.
+- The limiter is **per API process**. Counts are not shared across multiple instances. Multi-instance deployments need a shared store or edge/WAF strategy (out of scope for this design).
 
 ### CORS
 
@@ -250,6 +270,7 @@ Application-level API failures use a consistent JSON envelope (replacing FastAPI
 | Request/body validation (`RequestValidationError`) | 422 | `VALIDATION_ERROR` | `Request validation failed.` |
 | Missing/invalid auth | 401 | `UNAUTHORIZED` | Client-safe auth strings from `api.auth` |
 | Auth misconfiguration | 500 | `INTERNAL_ERROR` | `Authentication is not configured.` |
+| Chat rate limit exceeded | 429 | `TOO_MANY_REQUESTS` | `Rate limit exceeded. Try again later.` |
 | RAG / AI dependency failure from `POST /chat` | 503 | `SERVICE_UNAVAILABLE` | `The AI service is temporarily unavailable.` |
 | Other `HTTPException` | corresponding status | Mapped stable code (e.g. `NOT_FOUND`) | `HTTPException.detail` when a string |
 | Unhandled exception | 500 | `INTERNAL_ERROR` | `Something went wrong.` (no internal exception text) |
@@ -429,6 +450,7 @@ Examples include:
 - Answer-generation failures.
 - External service failures.
 - Authentication or authorization failures (Google ID-token verification on `POST /chat`).
+- Chat rate-limit exceeded (429 from the in-process limiter).
 - Ingest failures in Lambda (logged and re-raised so the invocation fails visibly).
 
 The backend should avoid exposing unnecessary internal error details to users.
@@ -453,6 +475,7 @@ Configuration may include values such as:
 - Service connection information.
 - `GOOGLE_CLIENT_ID` for Google ID-token audience verification on protected API routes.
 - `CORS_ALLOWED_ORIGINS` for browser CORS allowlist (comma-separated origins; fail closed when empty).
+- `CHAT_RATE_LIMIT_REQUESTS` / `CHAT_RATE_LIMIT_WINDOW_SECONDS` for in-process `POST /chat` rate limiting (per API instance).
 
 The final production configuration approach is **TBD**.
 
@@ -482,10 +505,11 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - Python is the selected backend language.
 - FastAPI is the selected backend framework.
 - Package layout under `backend/`: `api/schema`, `services`, `repositories`, `models`, `utils`, `handlers`, `tests`.
-- `POST /chat` accepts `{ "question": "..." }`, requires `Authorization: Bearer <Google ID token>`, calls `ask_rag(question)`, and returns `{ "answer", "source", "citations" }`.
+- `POST /chat` accepts `{ "question": "..." }`, requires `Authorization: Bearer <Google ID token>`, applies in-process rate limiting, calls `ask_rag(question)`, and returns `{ "answer", "source", "citations" }`.
 - `GET /health` returns `{ "status": "ok" }` without auth or AI dependency calls.
 - Every response includes `X-Request-ID` (accept valid incoming or generate UUID4); error bodies use `{ "error": { "code", "message", "request_id" } }`.
 - `backend/api/auth.py` verifies Google ID tokens with `google-auth` against `GOOGLE_CLIENT_ID` (`require_google_user` dependency).
+- `backend/api/rate_limit.py` enforces a configurable in-memory sliding-window limit on `POST /chat` (keyed by Google `sub`; per-instance only).
 - CORS via `CORSMiddleware` and `CORS_ALLOWED_ORIGINS` (fail closed; Authorization/Content-Type/Accept/X-Request-ID; GET/POST/OPTIONS; expose `X-Request-ID`).
 - `ask_rag(question)` in `backend/services/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source, context, citations}`.
 - `backend/services/ingest.py` ingests S3 PDFs into OpenSearch `medrep-index` (page extract → clean → token chunk → Titan embed → idempotent index with metadata; `source` kept for RAG).
