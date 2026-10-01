@@ -27,7 +27,13 @@ def test_ask_rag_returns_answer_and_source():
         patch("services.rag.embed_question", return_value=[0.1, 0.2]) as mock_embed,
         patch(
             "services.rag.search_opensearch",
-            return_value=[{"text": "Panadol is for pain.", "source": "panadol.pdf"}],
+            return_value=[
+                {
+                    "text": "Panadol is for pain.",
+                    "source": "panadol.pdf",
+                    "score": 0.85,
+                }
+            ],
         ) as mock_search,
         patch(
             "services.rag.generate_answer",
@@ -58,7 +64,7 @@ def test_ask_rag_pipeline_order():
 
     def search(_embedding):
         call_order.append("search")
-        return [{"text": "context text", "source": "doc.pdf"}]
+        return [{"text": "context text", "source": "doc.pdf", "score": 0.85}]
 
     def generate(_question, _context):
         call_order.append("generate")
@@ -92,9 +98,17 @@ def test_ask_rag_empty_retrieval_returns_controlled_response():
 
 def test_ask_rag_uses_all_retrieved_chunks_as_context():
     chunks = [
-        {"text": "Panadol is for pain.", "source": "panadol.pdf"},
-        {"text": "Dose is 500mg every 4-6 hours.", "source": "panadol.pdf"},
-        {"text": "Do not exceed 8 tablets in 24 hours.", "source": "safety.pdf"},
+        {"text": "Panadol is for pain.", "source": "panadol.pdf", "score": 0.85},
+        {
+            "text": "Dose is 500mg every 4-6 hours.",
+            "source": "panadol.pdf",
+            "score": 0.85,
+        },
+        {
+            "text": "Do not exceed 8 tablets in 24 hours.",
+            "source": "safety.pdf",
+            "score": 0.85,
+        },
     ]
     combined = (
         "Panadol is for pain.\n\n"
@@ -122,11 +136,11 @@ def test_ask_rag_uses_all_retrieved_chunks_as_context():
 
 def test_ask_rag_dedupes_identical_chunk_text():
     chunks = [
-        {"text": "Same text.", "source": "a.pdf"},
-        {"text": "Same text.", "source": "b.pdf"},
-        {"text": "Other text.", "source": "c.pdf"},
-        {"text": "", "source": "d.pdf"},
-        {"text": "Third text.", "source": ""},
+        {"text": "Same text.", "source": "a.pdf", "score": 0.85},
+        {"text": "Same text.", "source": "b.pdf", "score": 0.85},
+        {"text": "Other text.", "source": "c.pdf", "score": 0.85},
+        {"text": "", "source": "d.pdf", "score": 0.85},
+        {"text": "Third text.", "source": "", "score": 0.85},
     ]
     combined = "Same text.\n\nOther text.\n\nThird text."
 
@@ -155,7 +169,13 @@ def test_ask_rag_grounded_safe_question_returns_answer_and_source():
         patch("services.rag.embed_question", return_value=[0.1, 0.2]),
         patch(
             "services.rag.search_opensearch",
-            return_value=[{"text": product_context, "source": "ozempic.pdf"}],
+            return_value=[
+                {
+                    "text": product_context,
+                    "source": "ozempic.pdf",
+                    "score": 0.85,
+                }
+            ],
         ),
         patch(
             "services.rag.generate_answer",
@@ -184,7 +204,13 @@ def test_ask_rag_direct_prompt_injection_blocked_by_guardrail():
         patch("services.rag.embed_question", return_value=[0.1]),
         patch(
             "services.rag.search_opensearch",
-            return_value=[{"text": "Panadol is for pain.", "source": "panadol.pdf"}],
+            return_value=[
+                {
+                    "text": "Panadol is for pain.",
+                    "source": "panadol.pdf",
+                    "score": 0.85,
+                }
+            ],
         ),
         patch("services.rag._bedrock_runtime", return_value=mock_client),
     ):
@@ -213,6 +239,7 @@ def test_ask_rag_malicious_claim_blocked_by_guardrail():
                 {
                     "text": "Ozempic is indicated for type 2 diabetes.",
                     "source": "ozempic.pdf",
+                    "score": 0.85,
                 }
             ],
         ),
@@ -259,7 +286,13 @@ def test_ask_rag_malicious_retrieved_context_not_followed():
         patch("services.rag.embed_question", return_value=[0.1]),
         patch(
             "services.rag.search_opensearch",
-            return_value=[{"text": malicious_chunk, "source": "ozempic.pdf"}],
+            return_value=[
+                {
+                    "text": malicious_chunk,
+                    "source": "ozempic.pdf",
+                    "score": 0.85,
+                }
+            ],
         ),
         patch("services.rag._bedrock_runtime", return_value=mock_client),
     ):
@@ -335,3 +368,28 @@ def test_generate_answer_guardrail_intervened_parses_answer_and_stop_reason():
     kwargs = mock_client.converse.call_args.kwargs
     assert kwargs["system"] == [{"text": rag.SYSTEM_PROMPT}]
     assert kwargs["guardrailConfig"]["guardrailIdentifier"] == "3tmckzmwqxij"
+
+def test_ask_rag_rejects_results_below_relevance_threshold():
+    with (
+        patch("services.rag.embed_question", return_value=[0.1]),
+        patch(
+            "services.rag.search_opensearch",
+            return_value=[
+                {
+                    "text": "Unrelated document.",
+                    "source": "ozempic.pdf",
+                    "score": 0.57,
+                }
+            ],
+        ),
+        patch("services.rag.generate_answer") as mock_generate,
+    ):
+        result = rag.ask_rag("What is the weather today?")
+
+    assert result == {
+        "answer": "No relevant documents found.",
+        "source": "",
+        "context": "",
+    }
+
+    mock_generate.assert_not_called()

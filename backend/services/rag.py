@@ -16,7 +16,7 @@ RAG_MAX_CONTEXT_CHARS = int(
     os.getenv("RAG_MAX_CONTEXT_CHARS", 12000)
 )
 
-MIN_SCORE = float(os.getenv("MIN_SCORE", 0.56))
+MIN_SCORE = float(os.getenv("MIN_SCORE", 0.70))
 
 SYSTEM_PROMPT = textwrap.dedent(
     """\
@@ -88,7 +88,7 @@ def embed_question(question: str) -> list[float]:
     return payload["embedding"]
 
 
-def search_opensearch(embedding: list[float]) -> list[dict[str, str]]:
+def search_opensearch(embedding: list[float]) -> list[dict[str, str | float]]:
     index = os.environ.get("OPENSEARCH_INDEX", "medrep-index")
     top_k = int(os.environ.get("RAG_TOP_K", "3"))
     client = _opensearch_client()
@@ -105,15 +105,14 @@ def search_opensearch(embedding: list[float]) -> list[dict[str, str]]:
     }
     response = client.search(index=index, body=query)
     hits = response.get("hits", {}).get("hits", [])
-    results: list[dict[str, str]] = []
+    results: list[dict[str, str | float]] = []
     for hit in hits:
         source = hit.get("_source", {})
-        score = hit.get("_score", 0)
         results.append(
             {
                 "text": source.get("text", ""),
                 "source": source.get("source", ""),
-                "score": score,
+                "score": float(hit.get("_score", 0)),
             }
         )
     return results
@@ -166,7 +165,7 @@ def _dedupe_chunks(results: list[dict[str, str]]) -> list[dict[str, str]]:
     for chunk in results:
         text = chunk.get("text", "")
         score = chunk.get("score", 0)
-        if text in seen_texts or score < MIN_SCORE:
+        if text in seen_texts or score <= MIN_SCORE:
             continue
         seen_texts.add(text)
         unique.append(chunk)
@@ -195,7 +194,6 @@ def build_context(chunks: list[str]) -> str:
 def ask_rag(question: str) -> dict[str, str]:
     embedding = embed_question(question)
     results = search_opensearch(embedding)
-
     if not results:
         return {
             "answer": "No relevant documents found.",
@@ -203,6 +201,12 @@ def ask_rag(question: str) -> dict[str, str]:
             "context": "",
         }
     chunks = _dedupe_chunks(results)
+    if not chunks:
+        return {
+            "answer": "No relevant documents found.",
+            "source": "",
+            "context": "",
+        }
     context_parts = [c["text"] for c in chunks if c.get("text")]
     context = build_context(context_parts)
     sources: list[str] = []
