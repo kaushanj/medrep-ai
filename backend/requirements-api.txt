@@ -1,0 +1,9 @@
+# Runtime deps for the medrep-api Lambda only (not local pytest/uvicorn).
+# Keep in sync with imports used by backend/main.py and its chat/RAG path.
+fastapi
+mangum
+boto3
+opensearch-py
+requests-aws4auth
+python-dotenv
+google-auth
