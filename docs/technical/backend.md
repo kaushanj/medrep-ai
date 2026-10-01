@@ -110,6 +110,25 @@ Behavior:
 
 Verification uses `google.oauth2.id_token.verify_oauth2_token` (signature, issuer, audience, expiry). Raw tokens must not be logged. Auth is isolated from `services/rag.py`. Application roles/RBAC are out of scope.
 
+### CORS
+
+Browser clients (the MedRep Next.js app) call `POST /chat` cross-origin. FastAPI registers `CORSMiddleware` in `backend/main.py` (`add_cors_middleware`).
+
+Configuration:
+
+| Variable | Purpose |
+| --- | --- |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated exact origins allowed to call the API from a browser (whitespace stripped; empty segments dropped). No default — empty/missing → no origins allowed (fail closed). Local Next.js example: `http://localhost:3000` (see `backend/.env.example`). |
+
+Middleware settings:
+
+- `allow_origins` — parsed from `CORS_ALLOWED_ORIGINS` (no wildcard, no `allow_origin_regex`).
+- `allow_credentials=False`
+- `allow_methods` — `POST`, `OPTIONS`
+- `allow_headers` — `Authorization`, `Content-Type`, `Accept`
+
+Do not hard-code production hostnames; set the env var per environment.
+
 ### RAG module (`ask_rag`)
 
 `backend/services/rag.py` provides `ask_rag(question)` which:
@@ -382,6 +401,7 @@ Configuration may include values such as:
 - Retrieval configuration.
 - Service connection information.
 - `GOOGLE_CLIENT_ID` for Google ID-token audience verification on protected API routes.
+- `CORS_ALLOWED_ORIGINS` for browser CORS allowlist (comma-separated origins; fail closed when empty).
 
 The final production configuration approach is **TBD**.
 
@@ -413,6 +433,7 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - Package layout under `backend/`: `api/schema`, `services`, `repositories`, `models`, `utils`, `handlers`, `tests`.
 - `POST /chat` accepts `{ "question": "..." }`, requires `Authorization: Bearer <Google ID token>`, calls `ask_rag(question)`, and returns `{ "answer", "source", "citations" }`.
 - `backend/api/auth.py` verifies Google ID tokens with `google-auth` against `GOOGLE_CLIENT_ID` (`require_google_user` dependency).
+- CORS via `CORSMiddleware` and `CORS_ALLOWED_ORIGINS` (fail closed; Authorization/Content-Type/Accept; POST/OPTIONS).
 - `ask_rag(question)` in `backend/services/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source, context, citations}`.
 - `backend/services/ingest.py` ingests S3 PDFs into OpenSearch `medrep-index` (page extract → clean → token chunk → Titan embed → idempotent index with metadata; `source` kept for RAG).
 - S3 ObjectCreated Lambda handler `backend/handlers/s3_ingest.py` calls the shared ingest service.
