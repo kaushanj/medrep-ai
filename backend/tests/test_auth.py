@@ -34,11 +34,25 @@ def google_client_id(monkeypatch):
     )
 
 
+def _assert_error(response, *, status: int, code: str, message: str):
+    assert response.status_code == status
+    body = response.json()
+    assert body["error"]["code"] == code
+    assert body["error"]["message"] == message
+    assert body["error"]["request_id"]
+    assert response.headers.get("x-request-id") == body["error"]["request_id"]
+
+
 def test_missing_authorization_returns_401(google_client_id):
     response = client.post("/chat", json={"question": "What is Panadol used for?"})
 
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Not authenticated."
+    _assert_error(
+        response,
+        status=401,
+        code="UNAUTHORIZED",
+        message="Not authenticated.",
+    )
+    assert response.headers.get("www-authenticate") == "Bearer"
 
 
 def test_non_bearer_scheme_returns_401(google_client_id):
@@ -48,8 +62,12 @@ def test_non_bearer_scheme_returns_401(google_client_id):
         headers={"Authorization": "Basic sometoken"},
     )
 
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Not authenticated."
+    _assert_error(
+        response,
+        status=401,
+        code="UNAUTHORIZED",
+        message="Not authenticated.",
+    )
 
 
 def test_invalid_token_returns_401(google_client_id):
@@ -63,8 +81,12 @@ def test_invalid_token_returns_401(google_client_id):
             headers={"Authorization": "Bearer invalid-token"},
         )
 
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid authentication credentials."
+    _assert_error(
+        response,
+        status=401,
+        code="UNAUTHORIZED",
+        message="Invalid authentication credentials.",
+    )
 
 
 def test_expired_token_returns_401(google_client_id):
@@ -78,8 +100,12 @@ def test_expired_token_returns_401(google_client_id):
             headers={"Authorization": "Bearer expired-token"},
         )
 
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid authentication credentials."
+    _assert_error(
+        response,
+        status=401,
+        code="UNAUTHORIZED",
+        message="Invalid authentication credentials.",
+    )
 
 
 def test_wrong_audience_returns_401(google_client_id):
@@ -93,8 +119,12 @@ def test_wrong_audience_returns_401(google_client_id):
             headers={"Authorization": "Bearer wrong-aud-token"},
         )
 
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid authentication credentials."
+    _assert_error(
+        response,
+        status=401,
+        code="UNAUTHORIZED",
+        message="Invalid authentication credentials.",
+    )
 
 
 def test_google_auth_error_returns_401(google_client_id):
@@ -108,9 +138,12 @@ def test_google_auth_error_returns_401(google_client_id):
             headers={"Authorization": "Bearer bad-issuer-token"},
         )
 
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid authentication credentials."
-
+    _assert_error(
+        response,
+        status=401,
+        code="UNAUTHORIZED",
+        message="Invalid authentication credentials.",
+    )
 
 @patch("main.ask_rag")
 def test_valid_token_reaches_chat_handler(mock_ask_rag, google_client_id):
@@ -152,10 +185,13 @@ def test_unset_google_client_id_returns_500(monkeypatch):
             headers={"Authorization": "Bearer some-token"},
         )
 
-    assert response.status_code == 500
-    assert response.json()["detail"] == "Authentication is not configured."
+    _assert_error(
+        response,
+        status=500,
+        code="INTERNAL_ERROR",
+        message="Authentication is not configured.",
+    )
     mock_verify.assert_not_called()
-
 
 def test_verify_google_id_token_requires_client_id(monkeypatch):
     monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)

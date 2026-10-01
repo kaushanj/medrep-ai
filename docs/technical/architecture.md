@@ -10,7 +10,7 @@ Product PDFs in S3 are ingested into OpenSearch (`medrep-index`) with RAG fields
 
 Objects uploaded before the S3 notification existed are not auto-ingested; re-upload or run the CLI for backfill. Live deploy and one-PDF verification are operator steps (see `docs/technical/backend.md`).
 
-The RAG module (`ask_rag` in `backend/services/rag.py`) embeds questions with Amazon Bedrock, retrieves from Amazon OpenSearch, and generates answers with Amazon Bedrock. `POST /chat` is wired to `ask_rag`.
+The RAG module (`ask_rag` in `backend/services/rag.py`) embeds questions with Amazon Bedrock, retrieves from Amazon OpenSearch, and generates answers with Amazon Bedrock. `POST /chat` is wired to `ask_rag`. `GET /health` is an unauthenticated liveness check that does not call AI dependencies. API responses carry `X-Request-ID`; application errors use a consistent `{error: {code, message, request_id}}` envelope.
 
 The frontend is a Next.js App Router app under `frontend/`. It calls `POST /chat` using `NEXT_PUBLIC_API_BASE_URL`, attaching `Authorization: Bearer` from the in-memory Google ID token (`lib/auth.tsx` → `lib/api.ts`). Sign-in uses Google Identity Services. The backend verifies Google ID tokens on `POST /chat` (audience `GOOGLE_CLIENT_ID`) via `api.auth.require_google_user`. Auth failures (missing token / 401) sign the user out on the chat page.
 
