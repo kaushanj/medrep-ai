@@ -22,7 +22,7 @@ The backend is responsible for:
 
 - Receiving API requests.
 - Validating incoming request data.
-- Handling authentication and authorization when authentication is added.
+- Verifying Google ID tokens on protected endpoints (`POST /chat`).
 - Coordinating the RAG process.
 - Retrieving relevant information from product documents.
 - Sending retrieved context for answer generation.
@@ -42,7 +42,8 @@ The expected backend flow is:
 flowchart TD
     A[User] --> B[POST /chat]
     B --> C[FastAPI]
-    C --> D[RAG Service]
+    C --> AUTH[Verify Google ID token]
+    AUTH --> D[RAG Service]
     D --> E[Retrieval]
     E --> F[Relevant Document Content]
     F --> G[Answer Generation]
@@ -53,8 +54,8 @@ flowchart TD
 
 At a high level:
 
-1. The user submits a question to `POST /chat`.
-2. FastAPI receives and validates the request.
+1. The user submits a question to `POST /chat` with `Authorization: Bearer <Google ID token>`.
+2. FastAPI receives the request, verifies the Google ID token (`GOOGLE_CLIENT_ID` audience), and validates the body.
 3. The request is passed to the RAG logic.
 4. Relevant product document content is retrieved.
 5. The question and retrieved context are used for answer generation.
@@ -76,6 +77,7 @@ Receive a user question and return the MedRep AI response.
 The endpoint should remain focused on HTTP/API concerns such as:
 
 - Receiving the request.
+- Authenticating the caller (Google ID token).
 - Validating request data.
 - Calling the appropriate application logic.
 - Returning the result.
@@ -83,7 +85,30 @@ The endpoint should remain focused on HTTP/API concerns such as:
 
 The route handler should not contain the entire retrieval and answer-generation process as the project becomes larger.
 
-Request/response Pydantic models live in `backend/api/schema/`. `backend/main.py` loads configuration, creates the FastAPI app, and defines `POST /chat`.
+Request/response Pydantic models live in `backend/api/schema/`. Google ID-token verification lives in `backend/api/auth.py` (`require_google_user`). `backend/main.py` loads configuration, creates the FastAPI app, and defines `POST /chat` with that auth dependency.
+
+### Authentication (`POST /chat`)
+
+Protected endpoints require:
+
+```http
+Authorization: Bearer <Google ID token>
+```
+
+Configuration:
+
+| Variable | Purpose |
+| --- | --- |
+| `GOOGLE_CLIENT_ID` | Expected Google OAuth Web Client ID (token audience). Same value as frontend `NEXT_PUBLIC_GOOGLE_CLIENT_ID`. |
+
+Behavior:
+
+- Missing, malformed, or non-Bearer `Authorization` → **401** (`Not authenticated.`).
+- Invalid, expired, or wrong-audience token → **401** (`Invalid authentication credentials.`).
+- `GOOGLE_CLIENT_ID` unset/empty → **500** (`Authentication is not configured.`) — fail closed.
+- Valid token → request proceeds to RAG; verified claims are available to the route but unused by chat today.
+
+Verification uses `google.oauth2.id_token.verify_oauth2_token` (signature, issuer, audience, expiry). Raw tokens must not be logged. Auth is isolated from `services/rag.py`. Application roles/RBAC are out of scope.
 
 ### RAG module (`ask_rag`)
 
@@ -333,14 +358,14 @@ Examples include:
 - No suitable document information being found.
 - Answer-generation failures.
 - External service failures.
-- Authentication or authorization failures after authentication is added.
+- Authentication or authorization failures (Google ID-token verification on `POST /chat`).
 - Ingest failures in Lambda (logged and re-raised so the invocation fails visibly).
 
 The backend should avoid exposing unnecessary internal error details to users.
 
 Useful diagnostic information should still be available for development and troubleshooting.
 
-Exact HTTP status codes, error schemas, retry behavior, and user-facing error messages are **TBD** unless they are defined elsewhere in the project.
+For `POST /chat` authentication: missing/invalid Bearer credentials return **401**; unset `GOOGLE_CLIENT_ID` returns **500**. Other exact HTTP status codes, error schemas, retry behavior, and user-facing error messages remain **TBD** unless defined elsewhere.
 
 ## Configuration and Secrets
 
@@ -356,6 +381,7 @@ Configuration may include values such as:
 - Model configuration.
 - Retrieval configuration.
 - Service connection information.
+- `GOOGLE_CLIENT_ID` for Google ID-token audience verification on protected API routes.
 
 The final production configuration approach is **TBD**.
 
@@ -385,7 +411,8 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - Python is the selected backend language.
 - FastAPI is the selected backend framework.
 - Package layout under `backend/`: `api/schema`, `services`, `repositories`, `models`, `utils`, `handlers`, `tests`.
-- `POST /chat` accepts `{ "question": "..." }`, calls `ask_rag(question)`, and returns `{ "answer", "source", "citations" }`.
+- `POST /chat` accepts `{ "question": "..." }`, requires `Authorization: Bearer <Google ID token>`, calls `ask_rag(question)`, and returns `{ "answer", "source", "citations" }`.
+- `backend/api/auth.py` verifies Google ID tokens with `google-auth` against `GOOGLE_CLIENT_ID` (`require_google_user` dependency).
 - `ask_rag(question)` in `backend/services/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source, context, citations}`.
 - `backend/services/ingest.py` ingests S3 PDFs into OpenSearch `medrep-index` (page extract → clean → token chunk → Titan embed → idempotent index with metadata; `source` kept for RAG).
 - S3 ObjectCreated Lambda handler `backend/handlers/s3_ingest.py` calls the shared ingest service.
@@ -394,7 +421,7 @@ The full TDD workflow is defined separately and should not be duplicated in this
 ### Planned
 
 - Answers that include source information from real documents end-to-end in production.
-- Authentication and authorization.
+- Application roles / authorization (RBAC) if needed later.
 
 ### TBD
 
@@ -402,8 +429,8 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - Whether 400/40 token chunk size/overlap should change after offline evaluation.
 - Retrieval top-k tuning and relevance threshold.
 - Generation settings (temperature, max tokens).
-- Authentication implementation.
-- Error response format.
+- Authorization / roles beyond Google ID-token gate.
+- Error response format (beyond auth 401/500 above).
 - Retry behavior.
 - Final configuration approach.
 - Final deployment architecture beyond the ingest SAM template.
@@ -416,7 +443,6 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - What relevance threshold should be used?
 - How should the system behave when retrieval finds no sufficiently relevant content beyond the current empty-source response?
 - What exact source information should `POST /chat` return if multiple chunks match?
-- How should authentication be implemented?
 - How should authorization be handled if different user roles are introduced?
 - What retry behavior is appropriate for external service failures?
 - What should the final production configuration approach be?

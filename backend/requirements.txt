@@ -6,3 +6,4 @@ boto3
 opensearch-py
 python-dotenv
 pypdf
+google-auth
