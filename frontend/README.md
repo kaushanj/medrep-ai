@@ -36,7 +36,7 @@ Set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` to your Google OAuth Web Client ID. Leave it 
 5. Copy the **Client ID** into `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in `.env.local`.
 6. Restart `npm run dev` after changing env vars.
 
-Do not commit real client secrets. This app only needs the public Web Client ID (`NEXT_PUBLIC_…`). The Google ID token stays in memory for the signed-in session and is exposed via `getIdToken()` / `useAuth()` for the API client (#35); it is not logged.
+Do not commit real client secrets. This app only needs the public Web Client ID (`NEXT_PUBLIC_…`). The Google ID token stays in memory for the signed-in session; `lib/api.ts` sends it as `Authorization: Bearer` on chat requests via `getIdToken()`. The token is not logged.
 
 ## Run locally
 
@@ -48,7 +48,7 @@ Open [http://localhost:3000](http://localhost:3000). Unauthenticated users see t
 
 ## Backend note
 
-The UI calls `POST /chat` on the configured API base URL. Start the FastAPI backend separately before asking questions. Attaching the Google ID token as `Authorization: Bearer` is handled in a separate issue (#35). Backend verification of that token is #34.
+The UI calls `POST /chat` on the configured API base URL with `Authorization: Bearer <Google ID token>`. Start the FastAPI backend separately before asking questions. Backend verification of that token is #34.
 
 ## CORS limitation
 

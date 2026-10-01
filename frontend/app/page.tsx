@@ -7,13 +7,13 @@ import { QuestionForm } from "@/components/QuestionForm";
 import { SignInScreen } from "@/components/SignInScreen";
 import { UserMenu } from "@/components/UserMenu";
 import { useAuth } from "@/lib/auth";
-import { askChat } from "@/lib/api";
+import { askChat, AuthError } from "@/lib/api";
 import type { Citation } from "@/lib/types";
 
 const MAX_QUESTION_LENGTH = 2000;
 
 export default function HomePage() {
-  const { status } = useAuth();
+  const { status, signOut } = useAuth();
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
@@ -46,6 +46,10 @@ export default function HomePage() {
       setCitations(response.citations ?? []);
       setHasResponse(true);
     } catch (err) {
+      if (err instanceof AuthError) {
+        signOut();
+        return;
+      }
       const message =
         err instanceof Error ? err.message : "Something went wrong.";
       setError(message);
