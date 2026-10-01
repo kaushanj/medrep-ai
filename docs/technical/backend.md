@@ -92,13 +92,13 @@ Request/response Pydantic models live in `backend/api/schema/`. `backend/main.py
 1. Embeds the question with Amazon Bedrock.
 2. Searches Amazon OpenSearch (k-NN).
 3. Sends retrieved context to Amazon Bedrock for generation.
-4. Returns `{ "answer": "...", "source": "...", "context": "..." }` (singular `source` string; `context` is combined top-k chunk text after exact-text dedupe, joined with blank lines; `source` is unique retrieved sources joined into one string; both empty when no hits).
+4. Returns `{ "answer": "...", "source": "...", "context": "...", "citations": [...] }` (singular `source` string; `context` is combined top-k chunk text after exact-text dedupe, joined with blank lines; `source` is unique retrieved sources joined into one string; `citations` is a deduplicated list of structured metadata for chunks actually used in the generation context; both `source` and `citations` are empty when no hits, below threshold, guardrail-blocked, or unsupported).
 
 The OpenSearch client lives in `backend/repositories/opensearch.py` and is shared by RAG and ingest.
 
 Configuration uses environment variables (for example `AWS_REGION`, `BEDROCK_EMBEDDING_MODEL_ID`, `BEDROCK_GENERATION_MODEL_ID`, `OPENSEARCH_HOST`, `OPENSEARCH_INDEX`, `RAG_TOP_K`). Secrets are not hardcoded.
 
-`POST /chat` calls `ask_rag(question)` and returns only `{ "answer", "source" }` to clients (`context` is for offline eval reuse).
+`POST /chat` calls `ask_rag(question)` and returns `{ "answer", "source", "citations" }` to clients (`context` is for offline eval reuse).
 
 #### Offline RAG evaluation
 
@@ -140,12 +140,26 @@ Response:
 ```json
 {
   "answer": "...",
-  "source": "..."
+  "source": "...",
+  "citations": [
+    {
+      "product_name": "ozempic",
+      "document_type": "pdf",
+      "source_filename": "ozempic.pdf",
+      "s3_key": "ozempic/ozempic.pdf",
+      "page_number": 3,
+      "section_name": "Indications",
+      "document_version": "v2",
+      "effective_date": "2024-01-01"
+    }
+  ]
 }
 ```
 
 - Request body field: `question` (string).
-- Response fields: `answer` and `source` from `ask_rag` (singular `source` string; may be empty when no documents are found).
+- Response fields: `answer`, `source`, and `citations` from `ask_rag`.
+  - `source` remains a singular string (may be empty or `null` when no documents are found or a guardrail intervenes).
+  - `citations` is an array of structured citation objects for chunks actually used in the RAG context. Optional fields may be `null` when metadata is missing. Duplicates are removed deterministically (first-seen wins) by `(s3_key or source_filename or source, page_number, section_name)`. Empty for no-hit, below-threshold, guardrail-blocked, and unsupported-answer responses.
 
 No additional API endpoints are defined at this stage. PDF ingestion is not an HTTP route; it is shared service code invoked by CLI and by an S3-triggered Lambda.
 
@@ -267,7 +281,7 @@ RAG ingestion settings (issue #12):
 - Behavior when retrieval quality is too low: controlled empty-source response from `ask_rag`
 
 The RAG layer should avoid making these settings part of unrelated API logic.
-Retrieving still uses `text` / `source` / `embedding`; extra ingest metadata does not change `POST /chat`.
+Retrieval returns ingest metadata alongside `text` / `source` / `embedding` so `POST /chat` can include structured `citations`.
 
 ## Retrieval
 
@@ -280,7 +294,7 @@ The retrieved content will then be provided to the answer-generation step.
 Current OpenSearch document shape for ingestion/retrieval:
 
 - Index name: `medrep-index` (default; override with `OPENSEARCH_INDEX`)
-- Retrieval fields (unchanged for RAG): `text` (chunk text), `source` (PDF filename), `embedding` (vector)
+- Retrieval fields: `text` (chunk text), `source` (PDF filename), `embedding` (vector), plus ingest metadata used for structured citations
 - Ingest metadata fields: `document_id`, `chunk_id`, `product_name`, `document_type`, `source_filename`, `s3_key`, `page_number`, optional `section_name` / `document_version` / `effective_date`
 - Idempotency: delete by `document_id` plus legacy same-filename docs without `document_id` (search→delete with refresh), then re-index with `_id=chunk_id`; empty re-upload still deletes; verify exact count
 - Vector / k-NN index mapping details beyond this field set: **TBD**
@@ -371,8 +385,8 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - Python is the selected backend language.
 - FastAPI is the selected backend framework.
 - Package layout under `backend/`: `api/schema`, `services`, `repositories`, `models`, `utils`, `handlers`, `tests`.
-- `POST /chat` accepts `{ "question": "..." }`, calls `ask_rag(question)`, and returns `{ "answer", "source" }`.
-- `ask_rag(question)` in `backend/services/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source, context}`.
+- `POST /chat` accepts `{ "question": "..." }`, calls `ask_rag(question)`, and returns `{ "answer", "source", "citations" }`.
+- `ask_rag(question)` in `backend/services/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source, context, citations}`.
 - `backend/services/ingest.py` ingests S3 PDFs into OpenSearch `medrep-index` (page extract → clean → token chunk → Titan embed → idempotent index with metadata; `source` kept for RAG).
 - S3 ObjectCreated Lambda handler `backend/handlers/s3_ingest.py` calls the shared ingest service.
 - SAM template `infra/template.yaml` packages a thin `handlers`-only function zip plus an ingest layer (`python/services`, `python/repositories`, deps) via the repo-root Makefile; source of truth remains under `backend/`. IAM, env vars, and `.pdf` ObjectCreated trigger are unchanged (deploy is an operator step).
