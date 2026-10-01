@@ -393,3 +393,26 @@ def test_ask_rag_rejects_results_below_relevance_threshold():
     }
 
     mock_generate.assert_not_called()
+
+def test_ask_rag_unsupported_answer_does_not_return_source():
+    with (
+        patch("services.rag.embed_question", return_value=[0.1]),
+        patch(
+            "services.rag.search_opensearch",
+            return_value=[
+                {
+                    "text": "Ozempic is indicated for type 2 diabetes.",
+                    "source": "ozempic.pdf",
+                    "score": 0.90,
+                }
+            ],
+        ),
+        patch(
+            "services.rag.generate_answer",
+            return_value=(rag.NOT_FOUND_ANSWER, "end_turn"),
+        ),
+    ):
+        result = rag.ask_rag("Does Ozempic cure cancer?")
+
+    assert result["answer"] == rag.NOT_FOUND_ANSWER
+    assert result["source"] == ""
