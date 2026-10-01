@@ -35,7 +35,8 @@ export type AuthContextValue = {
   user: AuthUser | null;
   idToken: string | null;
   error: string | null;
-  signOut: () => void;
+  /** Clears session; optional message is shown on the sign-in screen (e.g. session expired). */
+  signOut: (message?: string) => void;
   /** Host element for the official GIS button when status is unauthenticated. */
   setButtonHost: (el: HTMLDivElement | null) => void;
 };
@@ -142,19 +143,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  const signOut = useCallback(() => {
-    clearSession();
-    setError(null);
-    try {
-      window.google?.accounts?.id?.disableAutoSelect();
-    } catch {
-      // ignore GIS cleanup failures
-    }
-    setStatus(clientId ? "unauthenticated" : "misconfigured");
-    if (!clientId) {
-      setError(MISSING_CLIENT_ID_MESSAGE);
-    }
-  }, [clearSession, clientId]);
+  const signOut = useCallback(
+    (message?: string) => {
+      clearSession();
+      try {
+        window.google?.accounts?.id?.disableAutoSelect();
+      } catch {
+        // ignore GIS cleanup failures
+      }
+      setStatus(clientId ? "unauthenticated" : "misconfigured");
+      if (!clientId) {
+        setError(MISSING_CLIENT_ID_MESSAGE);
+      } else {
+        setError(message ?? null);
+      }
+    },
+    [clearSession, clientId]
+  );
 
   const handleCredential = useCallback(
     (response: GoogleCredentialResponse) => {

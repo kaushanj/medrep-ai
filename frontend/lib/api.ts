@@ -50,6 +50,9 @@ function buildHeaders(): HeadersInit {
 async function parseErrorMessage(response: Response): Promise<string> {
   try {
     const body = await response.json();
+    if (typeof body?.error?.message === "string" && body.error.message.trim()) {
+      return body.error.message;
+    }
     if (typeof body?.detail === "string") {
       return body.detail;
     }
