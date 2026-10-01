@@ -11,7 +11,6 @@ The chat API returns:
 
 ## Planned
 
-- Frontend
 - RAG
 - Retrieval with Amazon OpenSearch
 - LLM generation with Amazon Bedrock

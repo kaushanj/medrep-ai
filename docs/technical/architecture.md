@@ -12,7 +12,7 @@ Objects uploaded before the S3 notification existed are not auto-ingested; re-up
 
 The RAG module (`ask_rag` in `backend/services/rag.py`) embeds questions with Amazon Bedrock, retrieves from Amazon OpenSearch, and generates answers with Amazon Bedrock. `POST /chat` is wired to `ask_rag`.
 
-The frontend remains planned.
+The frontend is a Next.js App Router app under `frontend/`. It calls `POST /chat` using `NEXT_PUBLIC_API_BASE_URL`.
 
 ```mermaid
 flowchart TD
@@ -21,7 +21,7 @@ flowchart TD
     ingest["services.ingest.ingest_pdf"]
     cli["CLI ingest.py / -m services.ingest"]
     rep[Medical representative]
-    frontend["Frontend (planned)"]
+    frontend["Next.js frontend/"]
     api[FastAPI]
     rag["RAG ask_rag()"]
     opensearch["Amazon OpenSearch (medrep-index)"]
