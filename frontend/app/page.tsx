@@ -4,12 +4,16 @@ import { useState } from "react";
 import { AnswerPanel } from "@/components/AnswerPanel";
 import { CitationsList } from "@/components/CitationsList";
 import { QuestionForm } from "@/components/QuestionForm";
+import { SignInScreen } from "@/components/SignInScreen";
+import { UserMenu } from "@/components/UserMenu";
+import { useAuth } from "@/lib/auth";
 import { askChat } from "@/lib/api";
 import type { Citation } from "@/lib/types";
 
 const MAX_QUESTION_LENGTH = 2000;
 
 export default function HomePage() {
+  const { status } = useAuth();
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
@@ -17,6 +21,10 @@ export default function HomePage() {
   const [citations, setCitations] = useState<Citation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [hasResponse, setHasResponse] = useState(false);
+
+  if (status !== "authenticated") {
+    return <SignInScreen />;
+  }
 
   async function handleSubmit() {
     const trimmed = question.trim();
@@ -50,10 +58,15 @@ export default function HomePage() {
   return (
     <main className="page">
       <header className="page-header">
-        <h1 className="page-title">MedRep AI</h1>
-        <p className="page-subtitle">
-          Ask questions about approved product documents.
-        </p>
+        <div className="page-header-row">
+          <div className="page-header-copy">
+            <h1 className="page-title">MedRep AI</h1>
+            <p className="page-subtitle">
+              Ask questions about approved product documents.
+            </p>
+          </div>
+          <UserMenu />
+        </div>
       </header>
 
       <QuestionForm
