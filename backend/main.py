@@ -2,9 +2,10 @@ import logging
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import Depends, FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exception_handlers import http_exception_handler
+from api.auth import require_google_user
 from api.schema import ChatRequest, ChatResponse
 from repositories.opensearch import opensearch_client
 from services.rag import _bedrock_runtime, ask_rag
@@ -36,7 +37,10 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest) -> ChatResponse:
+def chat(
+    request: ChatRequest,
+    _user: dict = Depends(require_google_user),
+) -> ChatResponse:
     try:
         result = ask_rag(request.question)
     except Exception:

@@ -12,7 +12,7 @@ Objects uploaded before the S3 notification existed are not auto-ingested; re-up
 
 The RAG module (`ask_rag` in `backend/services/rag.py`) embeds questions with Amazon Bedrock, retrieves from Amazon OpenSearch, and generates answers with Amazon Bedrock. `POST /chat` is wired to `ask_rag`.
 
-The frontend is a Next.js App Router app under `frontend/`. It calls `POST /chat` using `NEXT_PUBLIC_API_BASE_URL`. Sign-in uses Google Identity Services on the frontend to obtain a Google ID token (in-memory session via `lib/auth.tsx`); the backend verifies that token separately (#34). Attaching the token as `Authorization: Bearer` on API calls is #35.
+The frontend is a Next.js App Router app under `frontend/`. It calls `POST /chat` using `NEXT_PUBLIC_API_BASE_URL`. Sign-in uses Google Identity Services on the frontend to obtain a Google ID token (in-memory session via `lib/auth.tsx`). The backend verifies Google ID tokens on `POST /chat` (`Authorization: Bearer`, audience `GOOGLE_CLIENT_ID`) via `api.auth.require_google_user`. Attaching the token on frontend API calls is #35.
 
 ```mermaid
 flowchart TD
