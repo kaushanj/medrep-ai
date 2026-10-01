@@ -112,7 +112,19 @@ def embed_question(question: str) -> list[float]:
     return payload["embedding"]
 
 
-def search_opensearch(embedding: list[float]) -> list[dict[str, str | float]]:
+_CITATION_METADATA_FIELDS = (
+    "product_name",
+    "document_type",
+    "source_filename",
+    "s3_key",
+    "page_number",
+    "section_name",
+    "document_version",
+    "effective_date",
+)
+
+
+def search_opensearch(embedding: list[float]) -> list[dict]:
     index = os.environ.get("OPENSEARCH_INDEX", "medrep-index")
     top_k = int(os.environ.get("RAG_TOP_K", "3"))
     client = _opensearch_client()
@@ -129,16 +141,17 @@ def search_opensearch(embedding: list[float]) -> list[dict[str, str | float]]:
     }
     response = client.search(index=index, body=query)
     hits = response.get("hits", {}).get("hits", [])
-    results: list[dict[str, str | float]] = []
+    results: list[dict] = []
     for hit in hits:
         source = hit.get("_source", {})
-        results.append(
-            {
-                "text": source.get("text", ""),
-                "source": source.get("source", ""),
-                "score": float(hit.get("_score", 0)),
-            }
-        )
+        result: dict = {
+            "text": source.get("text", ""),
+            "source": source.get("source", ""),
+            "score": float(hit.get("_score", 0)),
+        }
+        for field in _CITATION_METADATA_FIELDS:
+            result[field] = source.get(field)
+        results.append(result)
     return results
 
 
@@ -230,7 +243,71 @@ def build_context(chunks: list[str]) -> str:
 
     return "\n\n".join(selected_chunks)
 
-def ask_rag(question: str) -> dict[str, str]:
+
+def _select_context_chunks(chunks: list[dict]) -> list[dict]:
+    """Select chunks that fit the same char budget as build_context."""
+    selected: list[dict] = []
+    current_length = 0
+
+    for chunk in chunks:
+        text = (chunk.get("text") or "").strip()
+        if not text:
+            continue
+
+        additional_length = len(text) + 2
+        if current_length + additional_length > RAG_MAX_CONTEXT_CHARS:
+            break
+
+        selected.append(chunk)
+        current_length += additional_length
+
+    return selected
+
+
+def _citation_from_chunk(chunk: dict) -> dict:
+    return {
+        "product_name": chunk.get("product_name"),
+        "document_type": chunk.get("document_type"),
+        "source_filename": chunk.get("source_filename"),
+        "s3_key": chunk.get("s3_key"),
+        "page_number": chunk.get("page_number"),
+        "section_name": chunk.get("section_name"),
+        "document_version": chunk.get("document_version"),
+        "effective_date": chunk.get("effective_date"),
+    }
+
+
+def _citation_dedupe_key(citation: dict, chunk: dict) -> tuple:
+    identity = (
+        citation.get("s3_key")
+        or citation.get("source_filename")
+        or chunk.get("source")
+        or ""
+    )
+    return (
+        identity,
+        citation.get("page_number"),
+        citation.get("section_name"),
+    )
+
+
+def _build_citations(chunks: list[dict]) -> list[dict]:
+    used = _select_context_chunks(chunks)
+    citations: list[dict] = []
+    seen: set[tuple] = set()
+
+    for chunk in used:
+        citation = _citation_from_chunk(chunk)
+        key = _citation_dedupe_key(citation, chunk)
+        if key in seen:
+            continue
+        seen.add(key)
+        citations.append(citation)
+
+    return citations
+
+
+def ask_rag(question: str) -> dict:
     embedding = embed_question(question)
     results = search_opensearch(embedding)
     if not results:
@@ -238,6 +315,7 @@ def ask_rag(question: str) -> dict[str, str]:
             "answer": "No relevant documents found.",
             "source": "",
             "context": "",
+            "citations": [],
         }
     chunks = _dedupe_chunks(results)
     if not chunks:
@@ -245,9 +323,11 @@ def ask_rag(question: str) -> dict[str, str]:
             "answer": "No relevant documents found.",
             "source": "",
             "context": "",
+            "citations": [],
         }
     context_parts = [c["text"] for c in chunks if c.get("text")]
     context = build_context(context_parts)
+    citations = _build_citations(chunks)
     sources: list[str] = []
     seen_sources: set[str] = set()
     for chunk in chunks:
@@ -260,15 +340,19 @@ def ask_rag(question: str) -> dict[str, str]:
     answer, stop_reason = generate_answer(question, context)
     if stop_reason == "guardrail_intervened":
         source = None
+        citations = []
 
     if answer.strip() == NOT_FOUND_ANSWER:
         source = ""
+        citations = []
 
     if stop_reason == "guardrail_intervened":
         source = None
+        citations = []
 
     return {
         "answer": answer,
         "source": source,
         "context": context,
+        "citations": citations,
     }

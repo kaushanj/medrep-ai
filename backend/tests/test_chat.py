@@ -29,6 +29,18 @@ def test_chat_returns_answer_and_source(mock_ask_rag):
     mock_ask_rag.return_value = {
         "answer": "Panadol is used for pain relief.",
         "source": "panadol.pdf",
+        "citations": [
+            {
+                "product_name": "panadol",
+                "document_type": "pdf",
+                "source_filename": "panadol.pdf",
+                "s3_key": "panadol/panadol.pdf",
+                "page_number": 1,
+                "section_name": "Indications",
+                "document_version": "v1",
+                "effective_date": "2023-06-01",
+            }
+        ],
     }
 
     response = client.post(
@@ -40,6 +52,18 @@ def test_chat_returns_answer_and_source(mock_ask_rag):
     assert response.json() == {
         "answer": "Panadol is used for pain relief.",
         "source": "panadol.pdf",
+        "citations": [
+            {
+                "product_name": "panadol",
+                "document_type": "pdf",
+                "source_filename": "panadol.pdf",
+                "s3_key": "panadol/panadol.pdf",
+                "page_number": 1,
+                "section_name": "Indications",
+                "document_version": "v1",
+                "effective_date": "2023-06-01",
+            }
+        ],
     }
     mock_ask_rag.assert_called_once_with("What is Panadol used for?")
 
@@ -70,7 +94,21 @@ def test_chat_full_rag_flow_returns_answer_and_source():
 
     def search(emb):
         call_order.append("search")
-        return [{"text": chunk_text, "source": chunk_source}]
+        return [
+            {
+                "text": chunk_text,
+                "source": chunk_source,
+                "score": 0.85,
+                "product_name": "panadol",
+                "document_type": "pdf",
+                "source_filename": "panadol.pdf",
+                "s3_key": "panadol/panadol.pdf",
+                "page_number": 1,
+                "section_name": None,
+                "document_version": None,
+                "effective_date": None,
+            }
+        ]
 
     def generate(q, context):
         call_order.append("generate")
@@ -87,6 +125,18 @@ def test_chat_full_rag_flow_returns_answer_and_source():
     assert response.json() == {
         "answer": grounded_answer,
         "source": chunk_source,
+        "citations": [
+            {
+                "product_name": "panadol",
+                "document_type": "pdf",
+                "source_filename": "panadol.pdf",
+                "s3_key": "panadol/panadol.pdf",
+                "page_number": 1,
+                "section_name": None,
+                "document_version": None,
+                "effective_date": None,
+            }
+        ],
     }
     mock_embed.assert_called_once_with(question)
     mock_search.assert_called_once_with(embedding)
@@ -105,7 +155,13 @@ def test_chat_guardrail_intervened_returns_safety_message_and_null_source():
         patch("services.rag.embed_question", return_value=embedding),
         patch(
             "services.rag.search_opensearch",
-            return_value=[{"text": "Panadol is for pain.", "source": "panadol.pdf"}],
+            return_value=[
+                {
+                    "text": "Panadol is for pain.",
+                    "source": "panadol.pdf",
+                    "score": 0.85,
+                }
+            ],
         ),
         patch(
             "services.rag.generate_answer",
@@ -118,4 +174,5 @@ def test_chat_guardrail_intervened_returns_safety_message_and_null_source():
     assert response.json() == {
         "answer": safety_message,
         "source": None,
+        "citations": [],
     }
