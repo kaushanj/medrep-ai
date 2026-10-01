@@ -1,10 +1,23 @@
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
+from api.auth import require_google_user
 from main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _bypass_google_auth():
+    """Chat/RAG tests stay auth-agnostic; real auth is covered in test_auth.py."""
+    app.dependency_overrides[require_google_user] = lambda: {
+        "sub": "test-user",
+        "email": "test@example.com",
+    }
+    yield
+    app.dependency_overrides.pop(require_google_user, None)
 
 
 def test_startup_warmup_failure_does_not_break_app():
