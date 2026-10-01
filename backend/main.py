@@ -46,7 +46,11 @@ def chat(request: ChatRequest) -> ChatResponse:
             detail="The AI service is temporarily unavailable.",
         )
 
-    return ChatResponse(answer=result["answer"], source=result["source"])
+    return ChatResponse(
+        answer=result["answer"],
+        source=result["source"],
+        citations=result.get("citations", []),
+    )
 
 
 @app.exception_handler(Exception)
