@@ -12,6 +12,8 @@ Objects uploaded before the S3 notification existed are not auto-ingested; re-up
 
 The RAG module (`ask_rag` in `backend/services/rag.py`) embeds questions with Amazon Bedrock, retrieves from Amazon OpenSearch, and generates answers with Amazon Bedrock. `POST /chat` is wired to `ask_rag` and is rate-limited in-process per authenticated user (or IP fallback). `GET /health` is an unauthenticated liveness check that does not call AI dependencies. API responses carry `X-Request-ID`; application errors use a consistent `{error: {code, message, request_id}}` envelope.
 
+The synchronous web API is hosted separately from ingestion: **API Gateway HTTP API → Lambda (`medrep-api`) → Mangum → FastAPI** (`infra/api-template.yaml`). Operator steps (validate/build/deploy, AOSS data-access policy for the API role, teardown) are in `docs/api-deployment.md`. Do not merge this stack with the S3 ingest SAM template.
+
 The frontend is a Next.js App Router app under `frontend/`. It calls `POST /chat` using `NEXT_PUBLIC_API_BASE_URL`, attaching `Authorization: Bearer` from the in-memory Google ID token (`lib/auth.tsx` → `lib/api.ts`). Sign-in uses Google Identity Services. The backend verifies Google ID tokens on `POST /chat` (audience `GOOGLE_CLIENT_ID`) via `api.auth.require_google_user`. Auth failures (missing token / 401) sign the user out on the chat page.
 
 ```mermaid
@@ -22,6 +24,8 @@ flowchart TD
     cli["CLI ingest.py / -m services.ingest"]
     rep[Medical representative]
     frontend["Next.js frontend/"]
+    apigw["API Gateway HTTP API"]
+    apiLambda["Lambda medrep-api + Mangum"]
     api[FastAPI]
     rag["RAG ask_rag()"]
     opensearch["Amazon OpenSearch (medrep-index)"]
@@ -34,7 +38,9 @@ flowchart TD
     ingest --> opensearch
     ingest --> bedrock
     rep --> frontend
-    frontend --> api
+    frontend --> apigw
+    apigw --> apiLambda
+    apiLambda --> api
     api --> rag
     rag --> opensearch
     rag --> bedrock

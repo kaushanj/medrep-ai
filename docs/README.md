@@ -4,4 +4,5 @@
 - [Medical representative domain](domain/medical-rep-domain.md)
 - [Architecture](technical/architecture.md)
 - [Backend](technical/backend.md)
+- [API deployment (SAM)](api-deployment.md)
 - [001. Use FastAPI](decisions/001-use-fastapi.md)

@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: MedRep AI synchronous FastAPI web API (API Gateway HTTP API → Lambda → Mangum)
+
+# Separate from the S3 PDF ingestion stack (infra/ingest-template.yaml / infra/template.yaml).
+# Do not merge these stacks: different triggers, timeouts, and IAM needs.
+
+Parameters:
+  GoogleClientId:
+    Type: String
+    Description: Google OAuth Web Client ID (token audience for POST /chat)
+  CorsAllowedOrigins:
+    Type: String
+    Default: ""
+    Description: >-
+      Comma-separated browser origins allowed by FastAPI CORS
+      (e.g. http://localhost:3000 or the CloudFront URL). Empty = fail closed.
+  OpenSearchHost:
+    Type: String
+    Description: OpenSearch Serverless collection endpoint hostname (no https://)
+  OpenSearchIndex:
+    Type: String
+    Default: medrep-index
+  OpenSearchPort:
+    Type: String
+    Default: "443"
+  OpenSearchUseSsl:
+    Type: String
+    Default: "true"
+  BedrockEmbeddingModelId:
+    Type: String
+    Default: amazon.titan-embed-text-v2:0
+  BedrockGenerationModelId:
+    Type: String
+    # Keep in sync with DEFAULT_GENERATION_MODEL_ID in backend/utils/constants.py
+    Default: amazon.nova-lite-v1:0
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures:
+      - x86_64
+    Timeout: 28
+    MemorySize: 512
+
+Resources:
+  MedRepHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: $default
+      # CORS is enforced by FastAPI (CORS_ALLOWED_ORIGINS), not API Gateway.
+      # OPTIONS /chat is routed to the Lambda so Starlette CORSMiddleware can respond.
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: medrep-api
+      CodeUri: ../backend/
+      Handler: main.handler
+      Description: MedRep FastAPI app via Mangum (GET /health, POST /chat)
+      Environment:
+        Variables:
+          GOOGLE_CLIENT_ID: !Ref GoogleClientId
+          CORS_ALLOWED_ORIGINS: !Ref CorsAllowedOrigins
+          OPENSEARCH_HOST: !Ref OpenSearchHost
+          OPENSEARCH_INDEX: !Ref OpenSearchIndex
+          OPENSEARCH_PORT: !Ref OpenSearchPort
+          OPENSEARCH_USE_SSL: !Ref OpenSearchUseSsl
+          BEDROCK_EMBEDDING_MODEL_ID: !Ref BedrockEmbeddingModelId
+          BEDROCK_GENERATION_MODEL_ID: !Ref BedrockGenerationModelId
+      Events:
+        HealthGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MedRepHttpApi
+            Path: /health
+            Method: GET
+        ChatPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MedRepHttpApi
+            Path: /chat
+            Method: POST
+        ChatOptions:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MedRepHttpApi
+            Path: /chat
+            Method: OPTIONS
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            # Embedding (invoke_model) + generation (converse) for configured model IDs.
+            - Sid: BedrockInvokeModels
+              Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource:
+                - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockEmbeddingModelId}
+                - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockGenerationModelId}
+            # Guardrail ID is hardcoded in backend/services/rag.py (generate_answer).
+            # If that ID changes in code, update this ARN to match.
+            - Sid: BedrockApplyGuardrail
+              Effect: Allow
+              Action:
+                - bedrock:ApplyGuardrail
+              Resource:
+                - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:guardrail/3tmckzmwqxij
+            # Collection ARN is not owned by this template (existing AOSS). IAM alone is
+            # not enough: also add ApiFunctionRoleArn to the existing AOSS data-access policy.
+            - Sid: OpenSearchServerlessDataAccess
+              Effect: Allow
+              Action:
+                - aoss:APIAccessAll
+              Resource: "*"
+
+  # Sets retention on the Lambda log group (name matches FunctionName: medrep-api).
+  ApiFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/medrep-api
+      RetentionInDays: 14
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway HTTP API base URL
+    Value: !Sub "https://${MedRepHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/"
+  ApiFunctionArn:
+    Description: ARN of the medrep-api Lambda
+    Value: !GetAtt ApiFunction.Arn
+  ApiFunctionRoleArn:
+    Description: >-
+      Execution role ARN — add this principal to the existing OpenSearch Serverless
+      data-access policy if the API cannot query medrep-index
+    Value: !GetAtt ApiFunctionRole.Arn
