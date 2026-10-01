@@ -513,6 +513,7 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - `backend/services/ingest.py` ingests S3 PDFs into OpenSearch `medrep-index` (page extract → clean → token chunk → Titan embed → idempotent index with metadata; `source` kept for RAG).
 - S3 ObjectCreated Lambda handler `backend/handlers/s3_ingest.py` calls the shared ingest service.
 - SAM template `infra/template.yaml` packages a thin `handlers`-only function zip plus an ingest layer (`python/services`, `python/repositories`, deps) via the repo-root Makefile; source of truth remains under `backend/`. IAM, env vars, and `.pdf` ObjectCreated trigger are unchanged (deploy is an operator step).
+- SAM template `infra/api-template.yaml` hosts the FastAPI app on API Gateway HTTP API + Lambda via Mangum (`main.handler`); deploy steps are in `docs/api-deployment.md` (operator-run; stack is separate from ingest).
 
 ### Planned
 
@@ -528,7 +529,7 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - Authorization / roles beyond Google ID-token gate.
 - Retry behavior.
 - Final configuration approach.
-- Final deployment architecture beyond the ingest SAM template.
+- Frontend static hosting (CloudFront/S3); API Lambda hosting is documented in `docs/api-deployment.md` (`infra/api-template.yaml`).
 - OpenSearch k-NN mapping / vector dimension configuration details.
 
 ## Open Technical Questions
