@@ -10,7 +10,7 @@ export function UserMenu() {
   }
 
   return (
-    <div className="user-menu">
+    <div className="user-menu" role="group" aria-label="Account">
       <div className="user-menu-identity">
         {user.picture ? (
           // eslint-disable-next-line @next/next/no-img-element -- Google profile URL; avoid next/image remote config
@@ -28,7 +28,12 @@ export function UserMenu() {
           <span className="user-menu-email">{user.email}</span>
         </div>
       </div>
-      <button type="button" className="sign-out-button" onClick={signOut}>
+      <button
+        type="button"
+        className="sign-out-button"
+        onClick={() => signOut()}
+        aria-label={`Sign out ${user.name}`}
+      >
         Sign out
       </button>
     </div>

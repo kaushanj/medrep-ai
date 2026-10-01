@@ -39,8 +39,10 @@ export function CitationsList({
   const hasCitations = citations.length > 0;
 
   return (
-    <section className="panel">
-      <h2 className="panel-title">Sources</h2>
+    <section className="panel" aria-labelledby="sources-heading">
+      <h2 id="sources-heading" className="panel-title">
+        Sources
+      </h2>
 
       {!hasCitations && (
         <p className="muted">No structured citations returned.</p>
@@ -75,7 +77,7 @@ export function CitationsList({
 
       {source && (
         <div className="legacy-source">
-          <h3 className="legacy-source-title">Legacy source</h3>
+          <h3 className="legacy-source-title">Source text</h3>
           <p className="legacy-source-text">{source}</p>
         </div>
       )}
