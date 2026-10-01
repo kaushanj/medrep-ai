@@ -3,11 +3,11 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Request, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.exception_handlers import http_exception_handler
 from api.auth import require_google_user
+from api.errors import register_exception_handlers
+from api.middleware import RequestIdMiddleware
 from api.schema import ChatRequest, ChatResponse
 from repositories.opensearch import opensearch_client
 from services.rag import _bedrock_runtime, ask_rag
@@ -32,9 +32,15 @@ def add_cors_middleware(app: FastAPI) -> None:
         CORSMiddleware,
         allow_origins=_cors_allowed_origins(),
         allow_credentials=False,
-        allow_methods=["POST", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Accept"],
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "X-Request-ID"],
+        expose_headers=["X-Request-ID"],
     )
+
+
+def add_request_id_middleware(app: FastAPI) -> None:
+    """Register request-ID middleware outermost (after CORS so it wraps CORS)."""
+    app.add_middleware(RequestIdMiddleware)
 
 
 @asynccontextmanager
@@ -54,6 +60,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 add_cors_middleware(app)
+add_request_id_middleware(app)
+register_exception_handlers(app)
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    """Lightweight liveness check; does not call Bedrock or OpenSearch."""
+    return {"status": "ok"}
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -75,11 +89,3 @@ def chat(
         source=result["source"],
         citations=result.get("citations", []),
     )
-
-
-@app.exception_handler(Exception)
-async def unhandled_exception(request: Request, exc: Exception):
-    if isinstance(exc, HTTPException):
-        return await http_exception_handler(request, exc)
-
-    return JSONResponse(status_code=500, content={"detail": "Internal Server Error."})
