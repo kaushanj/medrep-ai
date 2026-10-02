@@ -124,9 +124,13 @@ _CITATION_METADATA_FIELDS = (
 )
 
 
-def search_opensearch(embedding: list[float]) -> list[dict]:
+def search_opensearch(
+    embedding: list[float],
+    top_k: int | None = None,
+) -> list[dict]:
     index = os.environ.get("OPENSEARCH_INDEX", "medrep-index")
-    top_k = int(os.environ.get("RAG_TOP_K", "3"))
+    if top_k is None:
+        top_k = int(os.environ.get("RAG_TOP_K", "3"))
     client = _opensearch_client()
     query = {
         "size": top_k,
