@@ -188,6 +188,15 @@ Configuration uses environment variables (for example `AWS_REGION`, `BEDROCK_EMB
 
 `POST /chat` calls `ask_rag(question)` and returns `{ "answer", "source", "citations" }` to clients (`context` is for offline eval reuse).
 
+### Agent tool routing (`ask_agent`)
+
+`backend/services/agent.py` provides `ask_agent(question, model)` for one-turn tool use (no LangGraph loops). The model may call exactly one known tool from `TOOL_REGISTRY`:
+
+- `search_internal_documents` — trusted internal product documents
+- `search_dailymed_evidence` — DailyMed label evidence for supported products
+
+Unknown tools, tool exceptions, and missing evidence return safe refusals. Medical answers must come only from tool evidence. `ask_rag()` remains unchanged.
+
 #### Offline RAG evaluation
 
 `backend/eval/` runs golden cases from `backend/eval/cases.json` against one `ask_rag` result per case. Unit tests cover local load/validate and check logic without live AWS.
