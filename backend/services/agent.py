@@ -2,7 +2,10 @@ import json
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
-from services.agent_tools import search_internal_documents_tool
+from services.agent_tools import (
+    search_dailymed_evidence_tool,
+    search_internal_documents_tool,
+)
 
 
 SAFE_NO_RESULTS = (
@@ -18,6 +21,14 @@ AGENT_SYSTEM_PROMPT = """
 You are MedRep AI.
 
 Use the available tools to retrieve trusted evidence.
+
+Tool choice:
+- Use search_dailymed_evidence only for supported labeled products
+  currently in the DailyMed registry (e.g. Ozempic). Pass the product
+  name exactly (e.g. product_name="Ozempic").
+- Use search_internal_documents for all other products, unlabeled
+  questions, or when DailyMed is not appropriate.
+- Call exactly one tool.
 
 For medical or product-information questions:
 - Answer only from trusted evidence returned by the tools.
@@ -41,16 +52,18 @@ def ask_agent(question: str, model) -> str:
         return SAFE_NO_RESULTS
 
     tool_call = first_response.tool_calls[0]
+    tool_name = tool_call["name"]
 
-    # We currently support only this one agent tool.
-    if tool_call["name"] != "search_internal_documents":
+    if tool_name == "search_internal_documents":
+        tool = search_internal_documents_tool
+    elif tool_name == "search_dailymed_evidence":
+        tool = search_dailymed_evidence_tool
+    else:
         return SAFE_TOOL_ERROR
 
     # 3. Execute the trusted retrieval tool.
     try:
-        tool_result = search_internal_documents_tool.invoke(
-            tool_call["args"]
-        )
+        tool_result = tool.invoke(tool_call["args"])
     except Exception:
         return SAFE_TOOL_ERROR
 
