@@ -8,8 +8,47 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from services.agent import (
     SAFE_NO_RESULTS,
     SAFE_TOOL_ERROR,
+    SIMPLE_GREETING_RESPONSE,
     ask_agent,
+    match_simple_greeting,
 )
+
+
+def test_match_simple_greeting_positives():
+    for phrase in (
+        "hi",
+        "hello",
+        "hey",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "thanks",
+        "thank you",
+        "Hi",
+        "  hello! ",
+        "GOOD MORNING",
+    ):
+        assert match_simple_greeting(phrase) == SIMPLE_GREETING_RESPONSE
+
+
+def test_match_simple_greeting_negatives():
+    for phrase in (
+        "Who won the World Cup?",
+        "hi there",
+        "What is Ozempic used for?",
+        "",
+        "   ",
+    ):
+        assert match_simple_greeting(phrase) is None
+
+
+def test_ask_agent_greeting_short_circuits_without_model():
+    model = MagicMock()
+
+    result = ask_agent("Hi", model)
+
+    assert result == SIMPLE_GREETING_RESPONSE
+    model.invoke.assert_not_called()
 
 
 def _ok_evidence(query: str = "What is Ozempic used for?") -> dict:
