@@ -76,7 +76,7 @@ The system should handle questions that are unrelated to the available medical p
 Acceptance Criteria:
 - The system should not provide an unsupported product answer for an unrelated question.
 - The user receives an appropriate controlled response.
-- The exact response for unrelated questions is **TBD**.
+- Agent path (`ask_agent`): when neither trusted MedRep tool provides evidence, the controlled response is: "I can help with medical product information from trusted MedRep sources."
 
 ### FR-007 - Product Assistant Chat
 

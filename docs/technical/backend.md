@@ -190,12 +190,12 @@ Configuration uses environment variables (for example `AWS_REGION`, `BEDROCK_EMB
 
 ### Agent tool routing (`ask_agent`)
 
-`backend/services/agent.py` provides `ask_agent(question, model)` for one-turn tool use (no LangGraph loops). The model may call exactly one known tool from `TOOL_REGISTRY`:
+`backend/services/agent.py` provides `ask_agent(question, model)` for one-turn tool use (no LangGraph loops). A narrow deterministic pre-check handles exact simple greetings/thanks (`hi`, `hello`, `hey`, `good morning`, `good afternoon`, `good evening`, `thanks`, `thank you`) with a fixed friendly reply and does not call the model or tools. Other input goes through normal tool routing. The model may call exactly one known tool from `TOOL_REGISTRY`:
 
 - `search_internal_documents` — trusted internal product documents
 - `search_dailymed_evidence` — DailyMed label evidence for supported products
 
-Unknown tools, tool exceptions, and missing evidence return safe refusals. Medical answers must come only from tool evidence. `ask_rag()` remains unchanged.
+Unknown tools, tool exceptions, and missing evidence return safe refusals (including a short out-of-scope/safe message when neither trusted tool provides evidence). Medical answers must come only from tool evidence. `ask_rag()` remains unchanged.
 
 #### Offline RAG evaluation
 

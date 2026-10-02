@@ -8,8 +8,23 @@ from services.agent_tools import (
 )
 
 
+SIMPLE_GREETING_PHRASES = frozenset({
+    "hi",
+    "hello",
+    "hey",
+    "good morning",
+    "good afternoon",
+    "good evening",
+    "thanks",
+    "thank you",
+})
+
+SIMPLE_GREETING_RESPONSE = (
+    "Hi! How can I help you with product information?"
+)
+
 SAFE_NO_RESULTS = (
-    "I could not find trusted evidence to answer this question."
+    "I can help with medical product information from trusted MedRep sources."
 )
 
 SAFE_TOOL_ERROR = (
@@ -44,7 +59,19 @@ For medical or product-information questions:
 """
 
 
+def match_simple_greeting(text: str) -> str | None:
+    normalized = " ".join(text.strip().lower().split())
+    normalized = normalized.rstrip("!?.")
+    if normalized in SIMPLE_GREETING_PHRASES:
+        return SIMPLE_GREETING_RESPONSE
+    return None
+
+
 def ask_agent(question: str, model) -> str:
+    greeting = match_simple_greeting(question)
+    if greeting is not None:
+        return greeting
+
     messages = [
         SystemMessage(content=AGENT_SYSTEM_PROMPT),
         HumanMessage(content=question),
