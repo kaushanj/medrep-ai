@@ -28,6 +28,34 @@ def _ok_evidence(query: str = "What is Ozempic used for?") -> dict:
     }
 
 
+def _ok_dailymed_evidence(
+    query: str = "What is Ozempic used for?",
+    product_name: str = "Ozempic",
+) -> dict:
+    return {
+        "status": "ok",
+        "source": "dailymed",
+        "query": query,
+        "results": [
+            {
+                "text": "Ozempic (semaglutide) is indicated for type 2 diabetes.",
+                "score": 0.88,
+                "metadata": {"product_name": product_name},
+            }
+        ],
+        "error": None,
+    }
+
+
+def _mock_tool(return_value=None, side_effect=None) -> MagicMock:
+    tool = MagicMock()
+    if side_effect is not None:
+        tool.invoke.side_effect = side_effect
+    else:
+        tool.invoke.return_value = return_value
+    return tool
+
+
 def test_ask_agent_successful_tool_call_returns_final_answer():
     question = "What is Ozempic used for?"
     tool_call = {
@@ -39,12 +67,15 @@ def test_ask_agent_successful_tool_call_returns_final_answer():
     first_response = AIMessage(content="", tool_calls=[tool_call])
     final_answer = "Ozempic is used for type 2 diabetes."
     final_response = AIMessage(content=final_answer)
+    mock_tool = _mock_tool(return_value=_ok_evidence(question))
 
     model = MagicMock()
     model.invoke.side_effect = [first_response, final_response]
 
-    with patch("services.agent.search_internal_documents_tool") as mock_tool:
-        mock_tool.invoke.return_value = _ok_evidence(question)
+    with patch(
+        "services.agent.TOOL_REGISTRY",
+        {"search_internal_documents": mock_tool},
+    ):
         result = ask_agent(question, model)
 
     assert result == final_answer
@@ -56,8 +87,12 @@ def test_ask_agent_no_tool_call_returns_safe_no_results():
     first_response = AIMessage(content="I know about Ozempic.")
     model = MagicMock()
     model.invoke.return_value = first_response
+    mock_tool = _mock_tool()
 
-    with patch("services.agent.search_internal_documents_tool") as mock_tool:
+    with patch(
+        "services.agent.TOOL_REGISTRY",
+        {"search_internal_documents": mock_tool},
+    ):
         result = ask_agent("What is Ozempic used for?", model)
 
     assert result == SAFE_NO_RESULTS
@@ -84,9 +119,12 @@ def test_ask_agent_no_results_skips_second_llm_call():
         "results": [],
         "error": None,
     }
+    mock_tool = _mock_tool(return_value=evidence)
 
-    with patch("services.agent.search_internal_documents_tool") as mock_tool:
-        mock_tool.invoke.return_value = evidence
+    with patch(
+        "services.agent.TOOL_REGISTRY",
+        {"search_internal_documents": mock_tool},
+    ):
         result = ask_agent(question, model)
 
     assert result == SAFE_NO_RESULTS
@@ -112,9 +150,12 @@ def test_ask_agent_tool_error_skips_second_llm_call():
         "results": [],
         "error": "Internal document search failed.",
     }
+    mock_tool = _mock_tool(return_value=evidence)
 
-    with patch("services.agent.search_internal_documents_tool") as mock_tool:
-        mock_tool.invoke.return_value = evidence
+    with patch(
+        "services.agent.TOOL_REGISTRY",
+        {"search_internal_documents": mock_tool},
+    ):
         result = ask_agent(question, model)
 
     assert result == SAFE_TOOL_ERROR
@@ -133,12 +174,15 @@ def test_ask_agent_second_call_receives_grounded_message_history():
     final_answer = "Ozempic is indicated for type 2 diabetes."
     final_response = AIMessage(content=final_answer)
     evidence = _ok_evidence(question)
+    mock_tool = _mock_tool(return_value=evidence)
 
     model = MagicMock()
     model.invoke.side_effect = [first_response, final_response]
 
-    with patch("services.agent.search_internal_documents_tool") as mock_tool:
-        mock_tool.invoke.return_value = evidence
+    with patch(
+        "services.agent.TOOL_REGISTRY",
+        {"search_internal_documents": mock_tool},
+    ):
         result = ask_agent(question, model)
 
     assert result == final_answer
@@ -155,3 +199,79 @@ def test_ask_agent_second_call_receives_grounded_message_history():
     assert tool_message.tool_call_id == "call-4"
     assert tool_message.name == "search_internal_documents"
     assert json.loads(tool_message.content) == evidence
+
+
+def test_ask_agent_dailymed_tool_call_returns_final_answer():
+    question = "What is Ozempic used for?"
+    tool_call = {
+        "name": "search_dailymed_evidence",
+        "args": {"query": question, "product_name": "Ozempic"},
+        "id": "call-5",
+        "type": "tool_call",
+    }
+    first_response = AIMessage(content="", tool_calls=[tool_call])
+    final_answer = "Ozempic is indicated for type 2 diabetes."
+    final_response = AIMessage(content=final_answer)
+    evidence = _ok_dailymed_evidence(question)
+    mock_tool = _mock_tool(return_value=evidence)
+
+    model = MagicMock()
+    model.invoke.side_effect = [first_response, final_response]
+
+    with patch(
+        "services.agent.TOOL_REGISTRY",
+        {"search_dailymed_evidence": mock_tool},
+    ):
+        result = ask_agent(question, model)
+
+    assert result == final_answer
+    mock_tool.invoke.assert_called_once_with(
+        {"query": question, "product_name": "Ozempic"},
+    )
+    assert model.invoke.call_count == 2
+
+    second_messages = model.invoke.call_args_list[1].args[0]
+    tool_message = second_messages[3]
+    assert isinstance(tool_message, ToolMessage)
+    assert tool_message.name == "search_dailymed_evidence"
+    assert json.loads(tool_message.content) == evidence
+
+
+def test_ask_agent_unknown_tool_returns_safe_tool_error():
+    tool_call = {
+        "name": "search_web",
+        "args": {"query": "Ozempic"},
+        "id": "call-6",
+        "type": "tool_call",
+    }
+    first_response = AIMessage(content="", tool_calls=[tool_call])
+    model = MagicMock()
+    model.invoke.return_value = first_response
+
+    result = ask_agent("What is Ozempic used for?", model)
+
+    assert result == SAFE_TOOL_ERROR
+    assert model.invoke.call_count == 1
+
+
+def test_ask_agent_tool_invoke_exception_returns_safe_tool_error():
+    question = "What is Ozempic used for?"
+    tool_call = {
+        "name": "search_internal_documents",
+        "args": {"query": question},
+        "id": "call-7",
+        "type": "tool_call",
+    }
+    first_response = AIMessage(content="", tool_calls=[tool_call])
+    model = MagicMock()
+    model.invoke.return_value = first_response
+    mock_tool = _mock_tool(side_effect=RuntimeError("tool boom"))
+
+    with patch(
+        "services.agent.TOOL_REGISTRY",
+        {"search_internal_documents": mock_tool},
+    ):
+        result = ask_agent(question, model)
+
+    assert result == SAFE_TOOL_ERROR
+    assert model.invoke.call_count == 1
