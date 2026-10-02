@@ -17,6 +17,12 @@ SAFE_TOOL_ERROR = (
 )
 
 
+TOOL_REGISTRY = {
+    "search_internal_documents": search_internal_documents_tool,
+    "search_dailymed_evidence": search_dailymed_evidence_tool,
+}
+
+
 AGENT_SYSTEM_PROMPT = """
 You are MedRep AI.
 
@@ -52,13 +58,8 @@ def ask_agent(question: str, model) -> str:
         return SAFE_NO_RESULTS
 
     tool_call = first_response.tool_calls[0]
-    tool_name = tool_call["name"]
-
-    if tool_name == "search_internal_documents":
-        tool = search_internal_documents_tool
-    elif tool_name == "search_dailymed_evidence":
-        tool = search_dailymed_evidence_tool
-    else:
+    tool = TOOL_REGISTRY.get(tool_call["name"])
+    if tool is None:
         return SAFE_TOOL_ERROR
 
     # 3. Execute the trusted retrieval tool.
