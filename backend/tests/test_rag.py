@@ -479,6 +479,34 @@ def test_search_opensearch_copies_ingest_metadata():
     ]
 
 
+def test_search_opensearch_uses_env_top_k_when_omitted(monkeypatch):
+    monkeypatch.setenv("RAG_TOP_K", "5")
+    mock_client = MagicMock()
+    mock_client.search.return_value = {"hits": {"hits": []}}
+
+    with patch("services.rag._opensearch_client", return_value=mock_client):
+        rag.search_opensearch([0.1, 0.2])
+
+    mock_client.search.assert_called_once()
+    body = mock_client.search.call_args.kwargs["body"]
+    assert body["size"] == 5
+    assert body["query"]["knn"]["embedding"]["k"] == 5
+
+
+def test_search_opensearch_explicit_top_k_overrides_env(monkeypatch):
+    monkeypatch.setenv("RAG_TOP_K", "5")
+    mock_client = MagicMock()
+    mock_client.search.return_value = {"hits": {"hits": []}}
+
+    with patch("services.rag._opensearch_client", return_value=mock_client):
+        rag.search_opensearch([0.1, 0.2], top_k=4)
+
+    mock_client.search.assert_called_once()
+    body = mock_client.search.call_args.kwargs["body"]
+    assert body["size"] == 4
+    assert body["query"]["knn"]["embedding"]["k"] == 4
+
+
 def test_ask_rag_citations_include_full_metadata():
     chunk = {
         "text": "Ozempic is indicated for type 2 diabetes.",

@@ -9,3 +9,6 @@ python-dotenv
 pypdf
 google-auth
 mangum
+langchain-core
+langchain-aws
+certifi
