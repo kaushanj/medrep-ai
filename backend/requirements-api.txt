@@ -7,3 +7,5 @@ opensearch-py
 requests-aws4auth
 python-dotenv
 google-auth
+langchain-aws
+langchain-core
