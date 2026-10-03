@@ -33,6 +33,10 @@ build-ApiFunction:
 	cp backend/repositories/opensearch.py "$(ARTIFACTS_DIR)/repositories/"
 	cp backend/utils/__init__.py "$(ARTIFACTS_DIR)/utils/"
 	cp backend/utils/constants.py "$(ARTIFACTS_DIR)/utils/"
+	cp backend/services/agent.py "$(ARTIFACTS_DIR)/services/"
+	cp backend/services/agent_bedrock.py "$(ARTIFACTS_DIR)/services/"
+	cp backend/services/agent_tools.py "$(ARTIFACTS_DIR)/services/"
+	cp backend/services/chat_result.py "$(ARTIFACTS_DIR)/services/"
 	python3 -m pip install -r backend/requirements-api.txt -t "$(ARTIFACTS_DIR)" \
 		--platform manylinux2014_x86_64 \
 		--implementation cp \
