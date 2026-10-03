@@ -10,6 +10,17 @@ import boto3
 from botocore.config import Config
 from utils.constants import DEFAULT_GENERATION_MODEL_ID
 from repositories.opensearch import opensearch_client
+from services.chat_result import (
+    CITATION_FIELDS,
+    build_chat_result,
+    citation_dedupe_key,
+    citation_from_fields,
+    join_unique_labels,
+)
+
+# Re-export for existing imports/tests.
+_CITATION_METADATA_FIELDS = CITATION_FIELDS
+_citation_from_chunk = citation_from_fields
 
 # Re-export for callers/tests that historically imported from rag.
 _opensearch_client = opensearch_client
@@ -110,18 +121,6 @@ def embed_question(question: str) -> list[float]:
     )
 
     return payload["embedding"]
-
-
-_CITATION_METADATA_FIELDS = (
-    "product_name",
-    "document_type",
-    "source_filename",
-    "s3_key",
-    "page_number",
-    "section_name",
-    "document_version",
-    "effective_date",
-)
 
 
 def search_opensearch(
@@ -268,41 +267,14 @@ def _select_context_chunks(chunks: list[dict]) -> list[dict]:
     return selected
 
 
-def _citation_from_chunk(chunk: dict) -> dict:
-    return {
-        "product_name": chunk.get("product_name"),
-        "document_type": chunk.get("document_type"),
-        "source_filename": chunk.get("source_filename"),
-        "s3_key": chunk.get("s3_key"),
-        "page_number": chunk.get("page_number"),
-        "section_name": chunk.get("section_name"),
-        "document_version": chunk.get("document_version"),
-        "effective_date": chunk.get("effective_date"),
-    }
-
-
-def _citation_dedupe_key(citation: dict, chunk: dict) -> tuple:
-    identity = (
-        citation.get("s3_key")
-        or citation.get("source_filename")
-        or chunk.get("source")
-        or ""
-    )
-    return (
-        identity,
-        citation.get("page_number"),
-        citation.get("section_name"),
-    )
-
-
 def _build_citations(chunks: list[dict]) -> list[dict]:
     used = _select_context_chunks(chunks)
     citations: list[dict] = []
     seen: set[tuple] = set()
 
     for chunk in used:
-        citation = _citation_from_chunk(chunk)
-        key = _citation_dedupe_key(citation, chunk)
+        citation = citation_from_fields(chunk)
+        key = citation_dedupe_key(citation, chunk.get("source", ""))
         if key in seen:
             continue
         seen.add(key)
@@ -315,48 +287,37 @@ def ask_rag(question: str) -> dict:
     embedding = embed_question(question)
     results = search_opensearch(embedding)
     if not results:
-        return {
-            "answer": "No relevant documents found.",
-            "source": "",
-            "context": "",
-            "citations": [],
-        }
+        return build_chat_result(
+            "No relevant documents found.",
+            source="",
+            citations=[],
+            context="",
+        )
     chunks = _dedupe_chunks(results)
     if not chunks:
-        return {
-            "answer": "No relevant documents found.",
-            "source": "",
-            "context": "",
-            "citations": [],
-        }
+        return build_chat_result(
+            "No relevant documents found.",
+            source="",
+            citations=[],
+            context="",
+        )
     context_parts = [c["text"] for c in chunks if c.get("text")]
     context = build_context(context_parts)
     citations = _build_citations(chunks)
-    sources: list[str] = []
-    seen_sources: set[str] = set()
-    for chunk in chunks:
-        source = chunk.get("source", "")
-        if not source or source in seen_sources:
-            continue
-        seen_sources.add(source)
-        sources.append(source)
-    source = ", ".join(sources)
+    source = join_unique_labels(
+        [chunk.get("source", "") for chunk in chunks]
+    )
     answer, stop_reason = generate_answer(question, context)
     if stop_reason == "guardrail_intervened":
         source = None
         citations = []
-
-    if answer.strip() == NOT_FOUND_ANSWER:
+    elif answer.strip() == NOT_FOUND_ANSWER:
         source = ""
         citations = []
 
-    if stop_reason == "guardrail_intervened":
-        source = None
-        citations = []
-
-    return {
-        "answer": answer,
-        "source": source,
-        "context": context,
-        "citations": citations,
-    }
+    return build_chat_result(
+        answer,
+        source=source,
+        citations=citations,
+        context=context,
+    )

@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+import services.agent_tools as agent_tools
 from services.agent_tools import (
     search_internal_documents,
     search_internal_documents_tool,
@@ -214,5 +215,8 @@ def test_search_internal_documents_tool_schema_metadata():
     assert "Search trusted internal product documents" in (
         search_internal_documents_tool.description
     )
+    assert "dailymed" not in search_internal_documents_tool.description.lower()
     assert list(search_internal_documents_tool.args.keys()) == ["query"]
     assert "top_k" not in search_internal_documents_tool.args
+    assert not hasattr(agent_tools, "search_dailymed_evidence_tool")
+    assert not hasattr(agent_tools, "search_dailymed_evidence")
