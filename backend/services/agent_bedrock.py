@@ -19,6 +19,12 @@ def build_bedrock_model_with_internal_docs_tool():
             DEFAULT_GENERATION_MODEL_ID,
         ),
         region_name=os.environ.get("AWS_REGION", "us-east-1"),
-        temperature=0,
+        temperature=0.1,
+        max_tokens=500,
+        guardrail_config={
+            "guardrailIdentifier": "3tmckzmwqxij",
+            "guardrailVersion": "1",
+            "trace": "enabled",
+        },
     )
     return model.bind_tools([search_internal_documents_tool])
