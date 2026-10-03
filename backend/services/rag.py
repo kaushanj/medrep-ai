@@ -29,7 +29,7 @@ RAG_MAX_CONTEXT_CHARS = int(
     os.getenv("RAG_MAX_CONTEXT_CHARS", 12000)
 )
 
-MIN_SCORE = float(os.getenv("MIN_SCORE", 0.70))
+MIN_SCORE = float(os.getenv("MIN_SCORE", 0.55))
 
 SYSTEM_PROMPT = textwrap.dedent(
     """\
@@ -129,7 +129,7 @@ def search_opensearch(
 ) -> list[dict]:
     index = os.environ.get("OPENSEARCH_INDEX", "medrep-index")
     if top_k is None:
-        top_k = int(os.environ.get("RAG_TOP_K", "3"))
+        top_k = int(os.environ.get("RAG_TOP_K", "10"))
     client = _opensearch_client()
     query = {
         "size": top_k,
