@@ -2,8 +2,8 @@ import logging
 
 from langchain_core.tools import tool
 
+from services.chat_result import citation_from_fields
 from services.rag import (
-    _citation_from_chunk,
     _dedupe_chunks,
     embed_question,
     search_opensearch,
@@ -33,7 +33,7 @@ def search_internal_documents(query: str, top_k: int | None = None) -> dict:
                 {
                     "text": chunk.get("text", ""),
                     "score": chunk.get("score", 0),
-                    "metadata": _citation_from_chunk(chunk),
+                    "metadata": citation_from_fields(chunk),
                 }
                 for chunk in chunks
             ],

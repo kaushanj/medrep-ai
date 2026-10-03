@@ -3,6 +3,12 @@ import json
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 from services.agent_tools import search_internal_documents_tool
+from services.chat_result import (
+    build_chat_result,
+    citation_dedupe_key,
+    citation_from_fields,
+    join_unique_labels,
+)
 
 
 SAFE_NO_RESULTS = (
@@ -50,40 +56,67 @@ def _normalize_content(content) -> str:
     return str(content) if content is not None else ""
 
 
-def ask_agent(question: str, model) -> str:
+def _collect_citations(tool_result: dict, citations: list[dict], seen: set) -> None:
+    for item in tool_result.get("results") or []:
+        metadata = item.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            continue
+        citation = citation_from_fields(metadata)
+        if not any(value is not None and value != "" for value in citation.values()):
+            continue
+        key = citation_dedupe_key(citation)
+        if key in seen:
+            continue
+        seen.add(key)
+        citations.append(citation)
+
+
+def ask_agent(question: str, model) -> dict:
     messages = [
         SystemMessage(content=AGENT_SYSTEM_PROMPT),
         HumanMessage(content=question),
     ]
     saw_usable_evidence = False
+    citations: list[dict] = []
+    seen_citations: set = set()
 
     for _ in range(MAX_AGENT_ROUNDS):
         response = model.invoke(messages)
 
         if not response.tool_calls:
             if not saw_usable_evidence:
-                return SAFE_NO_RESULTS
-            return _normalize_content(response.content)
+                return build_chat_result(SAFE_NO_RESULTS)
+            return build_chat_result(
+                _normalize_content(response.content),
+                source=join_unique_labels(
+                    [
+                        citation.get("source_filename") or ""
+                        for citation in citations
+                    ]
+                ),
+                citations=citations,
+            )
 
         tool_messages = []
         for tool_call in response.tool_calls:
             tool = TOOL_REGISTRY.get(tool_call["name"])
             if tool is None:
-                return SAFE_TOOL_ERROR
+                return build_chat_result(SAFE_TOOL_ERROR)
 
             try:
                 tool_result = tool.invoke(tool_call["args"])
             except Exception:
-                return SAFE_TOOL_ERROR
+                return build_chat_result(SAFE_TOOL_ERROR)
 
             if tool_result["status"] == "error":
-                return SAFE_TOOL_ERROR
+                return build_chat_result(SAFE_TOOL_ERROR)
 
             if (
                 tool_result["status"] == "ok"
                 and tool_result.get("results")
             ):
                 saw_usable_evidence = True
+                _collect_citations(tool_result, citations, seen_citations)
 
             tool_messages.append(
                 ToolMessage(
@@ -96,4 +129,4 @@ def ask_agent(question: str, model) -> str:
         messages.append(response)
         messages.extend(tool_messages)
 
-    return SAFE_NO_RESULTS
+    return build_chat_result(SAFE_NO_RESULTS)
