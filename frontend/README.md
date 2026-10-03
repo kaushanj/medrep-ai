@@ -48,7 +48,7 @@ Open [http://localhost:3000](http://localhost:3000). Unauthenticated users see t
 
 ## Backend note
 
-The UI calls `POST /chat` on the configured API base URL with `Authorization: Bearer <Google ID token>`. Start the FastAPI backend separately before asking questions. Backend verification of that token is #34.
+The UI defaults to `POST /chat` and can switch to `POST /agent-chat` (Chat / Agent mode toggle). Requests use `Authorization: Bearer <Google ID token>` on the configured API base URL. Start the FastAPI backend separately before asking questions. Backend verification of that token is #34.
 
 ## CORS
 

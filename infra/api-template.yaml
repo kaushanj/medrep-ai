@@ -50,7 +50,7 @@ Resources:
       StageName: $default
       # CORS is enforced by FastAPI (CORS_ALLOWED_ORIGINS), not API Gateway.
       # OPTIONS /chat is routed to the Lambda so Starlette CORSMiddleware can respond.
-
+      # OPTIONS /agent-chat is routed to the Lambda so Starlette CORSMiddleware can respond.
   ApiFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -60,7 +60,7 @@ Resources:
       FunctionName: medrep-api
       CodeUri: ..
       Handler: main.handler
-      Description: MedRep FastAPI app via Mangum (GET /health, POST /chat)
+      Description: MedRep FastAPI app via Mangum (GET /health, POST /chat, POST /agent-chat)
       Environment:
         Variables:
           GOOGLE_CLIENT_ID: !Ref GoogleClientId
@@ -89,6 +89,18 @@ Resources:
           Properties:
             ApiId: !Ref MedRepHttpApi
             Path: /chat
+            Method: OPTIONS
+        AgentChatPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MedRepHttpApi
+            Path: /agent-chat
+            Method: POST
+        AgentChatOptions:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MedRepHttpApi
+            Path: /agent-chat
             Method: OPTIONS
       Policies:
         - Version: "2012-10-17"

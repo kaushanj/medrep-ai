@@ -157,7 +157,7 @@ Behavior:
 
 ### CORS
 
-Browser clients (the MedRep Next.js app) call `POST /chat` (and may call `GET /health`) cross-origin. FastAPI registers `CORSMiddleware` in `backend/main.py` (`add_cors_middleware`). Request-ID middleware is registered after CORS so it is outermost.
+Browser clients (the MedRep Next.js app) call `POST /chat` by default or `POST /agent-chat` when Agent mode is selected (and may call `GET /health`) cross-origin. FastAPI registers `CORSMiddleware` in `backend/main.py` (`add_cors_middleware`). Request-ID middleware is registered after CORS so it is outermost.
 
 Configuration:
 
@@ -198,8 +198,9 @@ Configuration uses environment variables (for example `AWS_REGION`, `BEDROCK_EMB
 
 Behavior:
 
-- Answers only from retrieved internal evidence returned by the tool.
-- Unknown tools, tool errors, and missing usable evidence return safe refusals.
+- Greetings and small talk may be answered without tools via model intent (system prompt); the Python gate allows a non-empty first-turn reply when no tool was invoked.
+- Medical and product-information answers are instructed (system prompt) to require `search_internal_documents` and to answer only from retrieved internal-document evidence; after unsuccessful tool use or empty usable evidence, the gate returns a safe refusal. The Python gate does not classify or block all ungrounded first-turn product answers if the model skips tools.
+- Unknown tools, tool errors, and missing usable evidence (after tool use) return safe refusals.
 - Shared response/citation helpers live in `backend/services/chat_result.py`.
 - `POST /chat` / `ask_rag()` remain the deterministic RAG path and are unchanged.
 

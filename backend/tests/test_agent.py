@@ -34,6 +34,12 @@ def test_agent_exposes_only_internal_documents_tool():
     assert list(TOOL_REGISTRY.keys()) == ["search_internal_documents"]
     assert "dailymed" not in AGENT_SYSTEM_PROMPT.lower()
     assert "search_dailymed_evidence" not in AGENT_SYSTEM_PROMPT
+    assert "greeting" in AGENT_SYSTEM_PROMPT.lower() or "small talk" in AGENT_SYSTEM_PROMPT.lower()
+    prompt_lower = AGENT_SYSTEM_PROMPT.lower()
+    assert "must call search_internal_documents" in prompt_lower
+    assert "mixed intent" in prompt_lower
+    assert "prior knowledge" in prompt_lower
+    assert "unsure" in prompt_lower
 
 
 def _mock_tool(return_value=None, side_effect=None) -> MagicMock:
@@ -123,8 +129,29 @@ def test_ask_agent_multi_step_compare_invokes_tool_twice():
     assert model.invoke.call_count == 3
 
 
+def test_ask_agent_greeting_without_tools_returns_model_reply():
+    greeting_reply = "Hello! How can I help you today?"
+    first_response = AIMessage(content=greeting_reply)
+    model = MagicMock()
+    model.invoke.return_value = first_response
+    mock_tool = _mock_tool()
+
+    with patch(
+        "services.agent.TOOL_REGISTRY",
+        {"search_internal_documents": mock_tool},
+    ):
+        result = ask_agent("hey", model)
+
+    assert result["answer"] == greeting_reply
+    assert result["answer"] != SAFE_NO_RESULTS
+    assert result["source"] == ""
+    assert result["citations"] == []
+    mock_tool.invoke.assert_not_called()
+    assert model.invoke.call_count == 1
+
+
 def test_ask_agent_no_tool_call_returns_safe_no_results():
-    first_response = AIMessage(content="I know about Ozempic.")
+    first_response = AIMessage(content="   ")
     model = MagicMock()
     model.invoke.return_value = first_response
     mock_tool = _mock_tool()
@@ -239,7 +266,9 @@ def test_ask_agent_second_call_receives_grounded_message_history():
     assert isinstance(tool_message, ToolMessage)
     assert tool_message.tool_call_id == "call-4"
     assert tool_message.name == "search_internal_documents"
-    assert json.loads(tool_message.content) == evidence
+    assert json.loads(tool_message.content) == [
+        "Ozempic is indicated for type 2 diabetes."
+    ]
 
 
 def test_ask_agent_unknown_tool_returns_safe_tool_error():
