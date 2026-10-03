@@ -1,7 +1,9 @@
 import { getIdToken } from "@/lib/auth";
-import type { ChatRequest, ChatResponse, Citation } from "./types";
+import type { ChatMode, ChatRequest, ChatResponse, Citation } from "./types";
 
 const CHAT_REQUEST_TIMEOUT_MS = 60_000;
+// Agent path may run multiple Bedrock rounds (search + answer).
+const AGENT_REQUEST_TIMEOUT_MS = 90_000;
 
 const AUTH_ERROR_MESSAGE =
   "Your session expired or you are not signed in. Please sign in again.";
@@ -79,21 +81,33 @@ function isAbortError(err: unknown): boolean {
   );
 }
 
-export async function askChat(question: string): Promise<ChatResponse> {
+function endpointForMode(mode: ChatMode): string {
+  return mode === "agent" ? "/agent-chat" : "/chat";
+}
+
+function timeoutForMode(mode: ChatMode): number {
+  return mode === "agent" ? AGENT_REQUEST_TIMEOUT_MS : CHAT_REQUEST_TIMEOUT_MS;
+}
+
+export async function askChat(
+  question: string,
+  mode: ChatMode = "chat"
+): Promise<ChatResponse> {
   const baseUrl = getApiBaseUrl();
   const payload: ChatRequest = { question };
   const headers = buildHeaders();
+  const path = endpointForMode(mode);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(
     () => controller.abort(),
-    CHAT_REQUEST_TIMEOUT_MS
+    timeoutForMode(mode)
   );
 
   try {
     let response: Response;
     try {
-      response = await fetch(`${baseUrl}/chat`, {
+      response = await fetch(`${baseUrl}${path}`, {
         method: "POST",
         headers,
         body: JSON.stringify(payload),

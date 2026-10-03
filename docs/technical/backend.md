@@ -157,7 +157,7 @@ Behavior:
 
 ### CORS
 
-Browser clients (the MedRep Next.js app) call `POST /chat` (and may call `GET /health`) cross-origin. FastAPI registers `CORSMiddleware` in `backend/main.py` (`add_cors_middleware`). Request-ID middleware is registered after CORS so it is outermost.
+Browser clients (the MedRep Next.js app) call `POST /chat` by default or `POST /agent-chat` when Agent mode is selected (and may call `GET /health`) cross-origin. FastAPI registers `CORSMiddleware` in `backend/main.py` (`add_cors_middleware`). Request-ID middleware is registered after CORS so it is outermost.
 
 Configuration:
 

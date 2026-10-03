@@ -1,3 +1,5 @@
+export type ChatMode = "chat" | "agent";
+
 export type ChatRequest = {
   question: string;
 };

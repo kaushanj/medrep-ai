@@ -1,6 +1,7 @@
 "use client";
 
 import type { FormEvent, KeyboardEvent } from "react";
+import type { ChatMode } from "@/lib/types";
 
 type QuestionFormProps = {
   value: string;
@@ -8,6 +9,8 @@ type QuestionFormProps = {
   onSubmit: () => void;
   loading: boolean;
   maxLength: number;
+  mode: ChatMode;
+  onModeChange: (mode: ChatMode) => void;
 };
 
 export function QuestionForm({
@@ -16,6 +19,8 @@ export function QuestionForm({
   onSubmit,
   loading,
   maxLength,
+  mode,
+  onModeChange,
 }: QuestionFormProps) {
   const trimmed = value.trim();
   const disabled = loading || trimmed.length === 0;
@@ -43,6 +48,38 @@ export function QuestionForm({
       onSubmit={handleSubmit}
       aria-busy={loading}
     >
+      <div className="mode-switch" role="group" aria-label="Chat mode">
+        <button
+          type="button"
+          className={
+            mode === "chat" ? "mode-switch-button is-active" : "mode-switch-button"
+          }
+          aria-pressed={mode === "chat"}
+          disabled={loading}
+          onClick={() => onModeChange("chat")}
+        >
+          Chat
+        </button>
+        <button
+          type="button"
+          className={
+            mode === "agent"
+              ? "mode-switch-button is-active"
+              : "mode-switch-button"
+          }
+          aria-pressed={mode === "agent"}
+          disabled={loading}
+          onClick={() => onModeChange("agent")}
+        >
+          Agent
+        </button>
+      </div>
+      <p className="mode-switch-hint" id="mode-hint">
+        {mode === "agent"
+          ? "Agent mode: greetings, compare products, multi-step search."
+          : "Chat mode: single-document Q&A (default)."}
+      </p>
+
       <label htmlFor="question" className="question-label">
         Ask a question
       </label>
@@ -55,9 +92,13 @@ export function QuestionForm({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Ask about an approved product document…"
+        placeholder={
+          mode === "agent"
+            ? "Ask, greet, or compare products…"
+            : "Ask about an approved product document…"
+        }
         disabled={loading}
-        aria-describedby="question-hint"
+        aria-describedby="question-hint mode-hint"
       />
       <div className="question-meta">
         <span id="question-hint" className="char-count">

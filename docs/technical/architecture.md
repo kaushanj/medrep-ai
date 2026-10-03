@@ -14,7 +14,7 @@ The RAG module (`ask_rag` in `backend/services/rag.py`) embeds questions with Am
 
 The synchronous web API is hosted separately from ingestion: **API Gateway HTTP API → Lambda (`medrep-api`) → Mangum → FastAPI** (`infra/api-template.yaml`). Operator steps (validate/build/deploy, AOSS data-access policy for the API role, teardown) are in `docs/api-deployment.md`. Do not merge this stack with the S3 ingest SAM template.
 
-The frontend is a Next.js App Router app under `frontend/`. It calls `POST /chat` using `NEXT_PUBLIC_API_BASE_URL`, attaching `Authorization: Bearer` from the in-memory Google ID token (`lib/auth.tsx` → `lib/api.ts`). Sign-in uses Google Identity Services. The backend verifies Google ID tokens on `POST /chat` (audience `GOOGLE_CLIENT_ID`) via `api.auth.require_google_user`. Auth failures (missing token / 401) sign the user out on the chat page.
+The frontend is a Next.js App Router app under `frontend/`. It defaults to `POST /chat` and can switch to `POST /agent-chat` via a Chat / Agent mode toggle, using `NEXT_PUBLIC_API_BASE_URL` and attaching `Authorization: Bearer` from the in-memory Google ID token (`lib/auth.tsx` → `lib/api.ts`). Sign-in uses Google Identity Services. The backend verifies Google ID tokens on `POST /chat` and `POST /agent-chat` (audience `GOOGLE_CLIENT_ID`) via `api.auth.require_google_user`. Auth failures (missing token / 401) sign the user out on the chat page.
 
 ```mermaid
 flowchart TD
