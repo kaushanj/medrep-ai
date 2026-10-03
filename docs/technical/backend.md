@@ -8,7 +8,9 @@ The backend is written in Python and uses FastAPI.
 
 The current backend API is centered on:
 
-`POST /chat`
+`POST /chat` (deterministic RAG via `ask_rag`)
+
+`POST /agent-chat` (multi-step LangChain agent over internal documents via `ask_agent`)
 
 `GET /health` (unauthenticated liveness)
 
@@ -24,8 +26,8 @@ The backend is responsible for:
 
 - Receiving API requests.
 - Validating incoming request data.
-- Verifying Google ID tokens on protected endpoints (`POST /chat`).
-- Coordinating the RAG process.
+- Verifying Google ID tokens on protected endpoints (`POST /chat`, `POST /agent-chat`).
+- Coordinating the RAG process and the internal-documents agent path.
 - Retrieving relevant information from product documents.
 - Sending retrieved context for answer generation.
 - Returning generated answers.
@@ -101,7 +103,7 @@ The endpoint should remain focused on HTTP/API concerns such as:
 
 The route handler should not contain the entire retrieval and answer-generation process as the project becomes larger.
 
-Request/response Pydantic models live in `backend/api/schema/`. Google ID-token verification lives in `backend/api/auth.py` (`require_google_user`). In-process chat rate limiting lives in `backend/api/rate_limit.py` (`enforce_chat_rate_limit`). Request-ID middleware lives in `backend/api/middleware.py`. Consistent error envelopes and handlers live in `backend/api/errors.py`. `backend/main.py` loads configuration, creates the FastAPI app, registers CORS + request-ID middleware and exception handlers, and defines `GET /health` and `POST /chat`.
+Request/response Pydantic models live in `backend/api/schema/`. Google ID-token verification lives in `backend/api/auth.py` (`require_google_user`). In-process chat rate limiting lives in `backend/api/rate_limit.py` (`enforce_chat_rate_limit`). Request-ID middleware lives in `backend/api/middleware.py`. Consistent error envelopes and handlers live in `backend/api/errors.py`. `backend/main.py` loads configuration, creates the FastAPI app, registers CORS + request-ID middleware and exception handlers, and defines `GET /health`, `POST /chat`, and `POST /agent-chat`.
 
 ### Request ID
 
@@ -113,9 +115,9 @@ Every API response includes an `X-Request-ID` header for log/response correlatio
 - The resolved ID is stored on `request.state.request_id`, returned on the response as `X-Request-ID`, and included in error envelopes as `error.request_id`.
 - Unexpected exceptions are logged with `request_id` (and path/method). Authorization tokens and full request bodies are not logged.
 
-### Authentication (`POST /chat`)
+### Authentication (`POST /chat`, `POST /agent-chat`)
 
-Protected endpoints require:
+Protected endpoints (`POST /chat`, `POST /agent-chat`) require:
 
 ```http
 Authorization: Bearer <Google ID token>
@@ -132,13 +134,13 @@ Behavior:
 - Missing, malformed, or non-Bearer `Authorization` → **401** (`UNAUTHORIZED` / `Not authenticated.`).
 - Invalid, expired, or wrong-audience token → **401** (`UNAUTHORIZED` / `Invalid authentication credentials.`).
 - `GOOGLE_CLIENT_ID` unset/empty → **500** (`INTERNAL_ERROR` / `Authentication is not configured.`) — fail closed.
-- Valid token → request proceeds to the chat rate limit (then RAG); verified claims are available to the route but unused by chat beyond rate-limit keying today.
+- Valid token → request proceeds to the chat rate limit (then `ask_rag` or `ask_agent`); verified claims are available to the route but unused beyond rate-limit keying today.
 
 Verification uses `google.oauth2.id_token.verify_oauth2_token` (signature, issuer, audience, expiry). Raw tokens must not be logged. Auth is isolated from `services/rag.py`. Application roles/RBAC are out of scope.
 
-### Rate limiting (`POST /chat`)
+### Rate limiting (`POST /chat`, `POST /agent-chat`)
 
-`POST /chat` is rate-limited after authentication via an in-memory sliding window in `backend/api/rate_limit.py` (`enforce_chat_rate_limit`). `GET /health` is not rate-limited.
+`POST /chat` and `POST /agent-chat` are rate-limited after authentication via an in-memory sliding window in `backend/api/rate_limit.py` (`enforce_chat_rate_limit`). `GET /health` is not rate-limited.
 
 Configuration:
 
@@ -188,14 +190,20 @@ Configuration uses environment variables (for example `AWS_REGION`, `BEDROCK_EMB
 
 `POST /chat` calls `ask_rag(question)` and returns `{ "answer", "source", "citations" }` to clients (`context` is for offline eval reuse).
 
-### Agent tool routing (`ask_agent`)
+### Agent path (`ask_agent` / `POST /agent-chat`)
 
-`backend/services/agent.py` provides `ask_agent(question, model)` for one-turn tool use (no LangGraph loops). The model may call exactly one known tool from `TOOL_REGISTRY`:
+`POST /agent-chat` uses the same request/response models as `POST /chat` (`ChatRequest` / `ChatResponse`: `answer`, `source`, `citations`). It calls `ask_agent(question, model)` in `backend/services/agent.py`.
 
-- `search_internal_documents` — trusted internal product documents
-- `search_dailymed_evidence` — DailyMed label evidence for supported products
+`ask_agent` is a multi-step LangChain agent loop (up to `MAX_AGENT_ROUNDS`) over **internal documents only**. The model may call `search_internal_documents` more than once (for example, to compare products). DailyMed is not on this path.
 
-Unknown tools, tool exceptions, and missing evidence return safe refusals. Medical answers must come only from tool evidence. `ask_rag()` remains unchanged.
+Behavior:
+
+- Answers only from retrieved internal evidence returned by the tool.
+- Unknown tools, tool errors, and missing usable evidence return safe refusals.
+- Shared response/citation helpers live in `backend/services/chat_result.py`.
+- `POST /chat` / `ask_rag()` remain the deterministic RAG path and are unchanged.
+
+DailyMed-related modules may still exist in the codebase for other use; they are not wired into `ask_agent` or `POST /agent-chat`.
 
 #### Offline RAG evaluation
 
@@ -258,7 +266,7 @@ Response:
   - `source` remains a singular string (may be empty or `null` when no documents are found or a guardrail intervenes).
   - `citations` is an array of structured citation objects for chunks actually used in the RAG context. Optional fields may be `null` when metadata is missing. Duplicates are removed deterministically (first-seen wins) by `(s3_key or source_filename or source, page_number, section_name)`. Empty for no-hit, below-threshold, guardrail-blocked, and unsupported-answer responses.
 
-No additional chat endpoints are defined at this stage. PDF ingestion is not an HTTP route; it is shared service code invoked by CLI and by an S3-triggered Lambda.
+`POST /agent-chat` uses the same request and response JSON shape (`answer`, `source`, `citations`) via `ask_agent`. PDF ingestion is not an HTTP route; it is shared service code invoked by CLI and by an S3-triggered Lambda.
 
 ### Error response shape
 
@@ -280,7 +288,7 @@ Application-level API failures use a consistent JSON envelope (replacing FastAPI
 | Missing/invalid auth | 401 | `UNAUTHORIZED` | Client-safe auth strings from `api.auth` |
 | Auth misconfiguration | 500 | `INTERNAL_ERROR` | `Authentication is not configured.` |
 | Chat rate limit exceeded | 429 | `TOO_MANY_REQUESTS` | `Rate limit exceeded. Try again later.` |
-| RAG / AI dependency failure from `POST /chat` | 503 | `SERVICE_UNAVAILABLE` | `The AI service is temporarily unavailable.` |
+| RAG / agent / AI dependency failure from `POST /chat` or `POST /agent-chat` | 503 | `SERVICE_UNAVAILABLE` | `The AI service is temporarily unavailable.` |
 | Other `HTTPException` | corresponding status | Mapped stable code (e.g. `NOT_FOUND`) | `HTTPException.detail` when a string |
 | Unhandled exception | 500 | `INTERNAL_ERROR` | `Something went wrong.` (no internal exception text) |
 
@@ -377,7 +385,7 @@ Its responsibilities may include:
 - Returning the result to the API layer.
 - Handling expected application-level failures.
 
-The RAG coordination entry point is `ask_rag(question)` in `backend/services/rag.py`. `POST /chat` calls it with the request question. Document ingestion lives in `backend/services/ingest.py`.
+The RAG coordination entry point is `ask_rag(question)` in `backend/services/rag.py`. `POST /chat` calls it with the request question. The agent entry point is `ask_agent(question, model)` in `backend/services/agent.py`; `POST /agent-chat` calls it with a Bedrock chat model bound to `search_internal_documents`. Shared chat response/citation helpers live in `backend/services/chat_result.py`. Document ingestion lives in `backend/services/ingest.py`.
 
 The project should keep this layer simple until additional complexity requires further separation.
 
@@ -456,8 +464,8 @@ Examples include:
 - No suitable document information being found.
 - Answer-generation failures.
 - External service failures.
-- Authentication or authorization failures (Google ID-token verification on `POST /chat`).
-- Chat rate-limit exceeded (429 from the in-process limiter).
+- Authentication or authorization failures (Google ID-token verification on `POST /chat` and `POST /agent-chat`).
+- Chat rate-limit exceeded (429 from the in-process limiter on both chat endpoints).
 - Ingest failures in Lambda (logged and re-raised so the invocation fails visibly).
 
 The backend should avoid exposing unnecessary internal error details to users.
@@ -482,7 +490,7 @@ Configuration may include values such as:
 - Service connection information.
 - `GOOGLE_CLIENT_ID` for Google ID-token audience verification on protected API routes.
 - `CORS_ALLOWED_ORIGINS` for browser CORS allowlist (comma-separated origins; fail closed when empty).
-- `CHAT_RATE_LIMIT_REQUESTS` / `CHAT_RATE_LIMIT_WINDOW_SECONDS` for in-process `POST /chat` rate limiting (per API instance).
+- `CHAT_RATE_LIMIT_REQUESTS` / `CHAT_RATE_LIMIT_WINDOW_SECONDS` for in-process `POST /chat` and `POST /agent-chat` rate limiting (per API instance).
 
 The final production configuration approach is **TBD**.
 
@@ -513,12 +521,14 @@ The full TDD workflow is defined separately and should not be duplicated in this
 - FastAPI is the selected backend framework.
 - Package layout under `backend/`: `api/schema`, `services`, `repositories`, `models`, `utils`, `handlers`, `tests`.
 - `POST /chat` accepts `{ "question": "..." }`, requires `Authorization: Bearer <Google ID token>`, applies in-process rate limiting, calls `ask_rag(question)`, and returns `{ "answer", "source", "citations" }`.
+- `POST /agent-chat` uses the same auth, rate limit, and `ChatResponse` shape; calls `ask_agent` (multi-step LangChain agent, `search_internal_documents` only) and returns `{ "answer", "source", "citations" }`.
 - `GET /health` returns `{ "status": "ok" }` without auth or AI dependency calls.
 - Every response includes `X-Request-ID` (accept valid incoming or generate UUID4); error bodies use `{ "error": { "code", "message", "request_id" } }`.
 - `backend/api/auth.py` verifies Google ID tokens with `google-auth` against `GOOGLE_CLIENT_ID` (`require_google_user` dependency).
-- `backend/api/rate_limit.py` enforces a configurable in-memory sliding-window limit on `POST /chat` (keyed by Google `sub`; per-instance only).
+- `backend/api/rate_limit.py` enforces a configurable in-memory sliding-window limit on `POST /chat` and `POST /agent-chat` (keyed by Google `sub`; per-instance only).
 - CORS via `CORSMiddleware` and `CORS_ALLOWED_ORIGINS` (fail closed; Authorization/Content-Type/Accept/X-Request-ID; GET/POST/OPTIONS; expose `X-Request-ID`).
 - `ask_rag(question)` in `backend/services/rag.py` implements embed → OpenSearch retrieve → Bedrock generate → `{answer, source, context, citations}`.
+- `ask_agent(question, model)` in `backend/services/agent.py` runs a multi-step internal-documents agent loop; shared helpers in `backend/services/chat_result.py`.
 - `backend/services/ingest.py` ingests S3 PDFs into OpenSearch `medrep-index` (page extract → clean → token chunk → Titan embed → idempotent index with metadata; `source` kept for RAG).
 - S3 ObjectCreated Lambda handler `backend/handlers/s3_ingest.py` calls the shared ingest service.
 - SAM template `infra/template.yaml` packages a thin `handlers`-only function zip plus an ingest layer (`python/services`, `python/repositories`, deps) via the repo-root Makefile; source of truth remains under `backend/`. IAM, env vars, and `.pdf` ObjectCreated trigger are unchanged (deploy is an operator step).
