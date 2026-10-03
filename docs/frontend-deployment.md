@@ -91,7 +91,7 @@ aws cloudformation describe-stacks \
   --output text
 ```
 
-Use that value as `NEXT_PUBLIC_API_BASE_URL` (include the trailing slash if the stack output has one; the frontend trims extra trailing slashes). Routes are `/health` and `/chat` relative to that base.
+Use that value as `NEXT_PUBLIC_API_BASE_URL` (include the trailing slash if the stack output has one; the frontend trims extra trailing slashes). Routes are `/health`, `/chat` (default UI mode), and `/agent-chat` (Agent mode) relative to that base.
 
 ## 5. Create production `.env.local` and build
 

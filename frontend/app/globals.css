@@ -197,6 +197,44 @@ body {
   gap: 0.75rem;
 }
 
+.mode-switch {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f3f4f6;
+}
+
+.mode-switch-button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  cursor: pointer;
+}
+
+.mode-switch-button.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.mode-switch-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.mode-switch-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .question-label {
   font-weight: 600;
   font-size: 0.95rem;
@@ -334,6 +372,7 @@ body {
 }
 
 .submit-button:focus-visible,
+.mode-switch-button:focus-visible,
 .sign-out-button:focus-visible,
 .retry-button:focus-visible,
 .question-input:focus-visible {

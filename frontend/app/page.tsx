@@ -8,13 +8,14 @@ import { SignInScreen } from "@/components/SignInScreen";
 import { UserMenu } from "@/components/UserMenu";
 import { useAuth } from "@/lib/auth";
 import { askChat, AuthError } from "@/lib/api";
-import type { Citation } from "@/lib/types";
+import type { ChatMode, Citation } from "@/lib/types";
 
 const MAX_QUESTION_LENGTH = 2000;
 
 export default function HomePage() {
   const { status, signOut } = useAuth();
   const [question, setQuestion] = useState("");
+  const [mode, setMode] = useState<ChatMode>("chat");
   const [loading, setLoading] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
@@ -40,7 +41,7 @@ export default function HomePage() {
     setHasResponse(false);
 
     try {
-      const response = await askChat(trimmed);
+      const response = await askChat(trimmed, mode);
       setAnswer(response.answer);
       setSource(response.source);
       setCitations(response.citations ?? []);
@@ -81,6 +82,8 @@ export default function HomePage() {
         onSubmit={handleSubmit}
         loading={loading}
         maxLength={MAX_QUESTION_LENGTH}
+        mode={mode}
+        onModeChange={setMode}
       />
 
       {error && (

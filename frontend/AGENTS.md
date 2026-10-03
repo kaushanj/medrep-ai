@@ -16,4 +16,4 @@ Minimal Next.js chat UI for MedRep AI.
 - Do not add a design system or frontend tests unless a GitHub issue requires it.
 - Auth (#33): GIS via `https://accounts.google.com/gsi/client`; configure with `NEXT_PUBLIC_GOOGLE_CLIENT_ID`. Token lives in React memory only; use `getIdToken()` / `useAuth()` from `lib/auth.tsx`. Do not log tokens.
 - Use `NEXT_PUBLIC_API_BASE_URL` for the backend base URL. Never commit secrets.
-- Auth headers: `lib/api.ts` (`getAuthHeaders` / `askChat`) attaches `Authorization: Bearer` from `getIdToken()`, uses a request timeout, and treats missing token / 401 as auth failure (never log the token).
+- Auth headers: `lib/api.ts` (`getAuthHeaders` / `askChat`) attaches `Authorization: Bearer` from `getIdToken()`, calls `POST /chat` by default or `POST /agent-chat` when Agent mode is selected, uses a request timeout, and treats missing token / 401 as auth failure (never log the token).
