@@ -67,7 +67,7 @@ def test_ask_agent_successful_tool_call_returns_final_answer():
     ):
         result = ask_agent(question, model)
 
-    assert result == final_answer
+    assert result["answer"] == final_answer
     mock_tool.invoke.assert_called_once_with({"query": question})
     assert model.invoke.call_count == 2
 
@@ -116,7 +116,7 @@ def test_ask_agent_multi_step_compare_invokes_tool_twice():
     ):
         result = ask_agent(question, model)
 
-    assert result == final_answer
+    assert result["answer"] == final_answer
     assert mock_tool.invoke.call_count == 2
     mock_tool.invoke.assert_any_call({"query": "Ozempic indications"})
     mock_tool.invoke.assert_any_call({"query": "Mounjaro indications"})
@@ -135,7 +135,7 @@ def test_ask_agent_no_tool_call_returns_safe_no_results():
     ):
         result = ask_agent("What is Ozempic used for?", model)
 
-    assert result == SAFE_NO_RESULTS
+    assert result["answer"] == SAFE_NO_RESULTS
     mock_tool.invoke.assert_not_called()
     assert model.invoke.call_count == 1
 
@@ -168,7 +168,7 @@ def test_ask_agent_no_results_continues_then_safe_no_results():
     ):
         result = ask_agent(question, model)
 
-    assert result == SAFE_NO_RESULTS
+    assert result["answer"] == SAFE_NO_RESULTS
     assert model.invoke.call_count == 2
 
 
@@ -199,7 +199,7 @@ def test_ask_agent_tool_error_skips_second_llm_call():
     ):
         result = ask_agent(question, model)
 
-    assert result == SAFE_TOOL_ERROR
+    assert result["answer"] == SAFE_TOOL_ERROR
     assert model.invoke.call_count == 1
 
 
@@ -226,7 +226,7 @@ def test_ask_agent_second_call_receives_grounded_message_history():
     ):
         result = ask_agent(question, model)
 
-    assert result == final_answer
+    assert result["answer"] == final_answer
     assert model.invoke.call_count == 2
 
     second_messages = model.invoke.call_args_list[1].args[0]
@@ -255,7 +255,7 @@ def test_ask_agent_unknown_tool_returns_safe_tool_error():
 
     result = ask_agent("What is Ozempic used for?", model)
 
-    assert result == SAFE_TOOL_ERROR
+    assert result["answer"] == SAFE_TOOL_ERROR
     assert model.invoke.call_count == 1
 
 
@@ -278,5 +278,5 @@ def test_ask_agent_tool_invoke_exception_returns_safe_tool_error():
     ):
         result = ask_agent(question, model)
 
-    assert result == SAFE_TOOL_ERROR
+    assert result["answer"] == SAFE_TOOL_ERROR
     assert model.invoke.call_count == 1

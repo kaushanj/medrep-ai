@@ -12,6 +12,8 @@ from api.middleware import RequestIdMiddleware
 from api.rate_limit import enforce_chat_rate_limit
 from api.schema import ChatRequest, ChatResponse
 from repositories.opensearch import opensearch_client
+from services.agent import ask_agent
+from services.agent_bedrock import build_bedrock_model_with_internal_docs_tool
 from services.rag import _bedrock_runtime, ask_rag
 
 load_dotenv()
@@ -72,6 +74,14 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _to_chat_response(result: dict) -> ChatResponse:
+    return ChatResponse(
+        answer=result["answer"],
+        source=result["source"],
+        citations=result.get("citations", []),
+    )
+
+
 @app.post("/chat", response_model=ChatResponse)
 def chat(
     request: ChatRequest,
@@ -87,10 +97,26 @@ def chat(
             detail="The AI service is temporarily unavailable.",
         )
 
-    return ChatResponse(
-        answer=result["answer"],
-        source=result["source"],
-        citations=result.get("citations", []),
-    )
+    return _to_chat_response(result)
+
+
+@app.post("/agent-chat", response_model=ChatResponse)
+def agent_chat(
+    request: ChatRequest,
+    _user: dict = Depends(require_google_user),
+    _rate_limit: None = Depends(enforce_chat_rate_limit),
+) -> ChatResponse:
+    try:
+        model = build_bedrock_model_with_internal_docs_tool()
+        result = ask_agent(request.question, model)
+    except Exception:
+        logger.error("Agent request failed.", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="The AI service is temporarily unavailable.",
+        )
+
+    return _to_chat_response(result)
+
 
 handler = Mangum(app, lifespan="off")
